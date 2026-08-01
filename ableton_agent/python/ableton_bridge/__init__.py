@@ -1,5 +1,12 @@
-"""Local client for the Ableton Agent Bridge Max for Live device."""
+"""Local Python client for the Ableton Agent Hub Max for Live device."""
 
 from .client import AbletonBridgeClient, BridgeCommandError, BridgeTimeoutError
 
-__all__ = ["AbletonBridgeClient", "BridgeCommandError", "BridgeTimeoutError"]
+__version__ = "0.1.0a0"
+
+__all__ = [
+    "AbletonBridgeClient",
+    "BridgeCommandError",
+    "BridgeTimeoutError",
+    "__version__",
+]

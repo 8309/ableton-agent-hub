@@ -56,6 +56,32 @@ GLOB_RULES = (
     "ableton_agent/styles/*.json",
 )
 
+PUBLIC_OWNED_PATHS = {
+    Path("ableton_agent/python/ableton_bridge/__init__.py"),
+    Path("ableton_agent/python/ableton_bridge/cli.py"),
+    Path("ableton_agent/python/ableton_bridge/ping.py"),
+    Path("ableton_agent/python/ableton_bridge/tempo.py"),
+}
+
+PUBLIC_TEXT_REPLACEMENTS = {
+    Path("ableton_agent/python/ableton_bridge/client.py"): (
+        (
+            "load Ableton Agent Bridge.amxd in the current Set",
+            "load or reload Ableton Agent Hub.amxd in the current Set",
+        ),
+    ),
+    Path("ableton_agent/python/ableton_bridge/server.py"): (
+        (
+            "Local HTTP service for Ableton Agent Bridge",
+            "Local HTTP service for Ableton Agent Hub",
+        ),
+        (
+            "Ableton Agent Bridge listening at",
+            "Ableton Agent Hub bridge listening at",
+        ),
+    ),
+}
+
 FORBIDDEN_DESTINATIONS = (
     "AGENTS.md",
     "SESSION_HANDOFF.md",
@@ -132,6 +158,7 @@ def resolve_export_files(source: Path) -> list[Path]:
     )
     for pattern in GLOB_RULES:
         relative_paths.update(path.relative_to(source) for path in source.glob(pattern))
+    relative_paths.difference_update(PUBLIC_OWNED_PATHS)
     missing = [path for path in sorted(relative_paths) if not (source / path).is_file()]
     if missing:
         formatted = "\n".join(f"- {path.as_posix()}" for path in missing)
@@ -200,6 +227,20 @@ def export_public_tests(source_path: Path, destination_path: Path) -> None:
     destination_path.write_text(filtered, encoding="utf-8", newline="\n")
 
 
+def apply_public_text_replacements(relative: Path, destination_path: Path) -> None:
+    replacements = PUBLIC_TEXT_REPLACEMENTS.get(relative, ())
+    if not replacements:
+        return
+    text = destination_path.read_text(encoding="utf-8")
+    for old, new in replacements:
+        if old not in text:
+            raise ValueError(
+                f"Public replacement is stale for {relative.as_posix()}: {old!r}"
+            )
+        text = text.replace(old, new)
+    destination_path.write_text(text, encoding="utf-8", newline="\n")
+
+
 def git_value(source: Path, *args: str) -> str | None:
     result = subprocess.run(
         ["git", "-C", str(source), *args],
@@ -237,6 +278,7 @@ def export(source: Path, destination: Path, *, dry_run: bool = False) -> dict:
             export_public_tests(source_path, destination_path)
         else:
             shutil.copy2(source_path, destination_path)
+        apply_public_text_replacements(relative, destination_path)
         copied.append(destination_path)
 
     scan_text_files(copied, destination)

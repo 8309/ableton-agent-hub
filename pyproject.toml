@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ableton-agent-hub"
+version = "0.1.0a0"
+description = "Local Max for Live bridge and safe Python toolkit for Ableton Live"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "Ableton Agent Hub contributors" },
+]
+keywords = ["ableton", "max-for-live", "music", "midi", "liveapi"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+
+[project.scripts]
+ableton-agent = "ableton_bridge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["ableton_agent/python"]
+
+[tool.setuptools.package-data]
+"ableton_bridge.resources.hub" = ["*.amxd", "*.js"]

@@ -71,7 +71,7 @@ def make_handler(client: AbletonBridgeClient):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Local HTTP service for Ableton Agent Bridge")
+    parser = argparse.ArgumentParser(description="Local HTTP service for Ableton Agent Hub")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--command-port", type=int, default=7400)
@@ -88,7 +88,7 @@ def main() -> None:
         timeout=args.timeout,
     )
     server = HTTPServer((args.host, args.port), make_handler(client))
-    print(f"Ableton Agent Bridge listening at http://{args.host}:{args.port}")
+    print(f"Ableton Agent Hub bridge listening at http://{args.host}:{args.port}")
     print("POST JSON commands to /command; Ctrl-C to stop")
     try:
         server.serve_forever()

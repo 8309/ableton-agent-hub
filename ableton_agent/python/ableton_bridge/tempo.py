@@ -56,8 +56,8 @@ def tempo(
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TempoTimeoutError(
-                    f"No tempo reply from Ableton Agent Hub or Tempo on UDP {reply_port}; "
-                    "reload Ableton Agent Hub.amxd or load Ableton Agent Tempo.amxd in the current Set"
+                    f"No tempo reply from Ableton Agent Hub on UDP {reply_port}; "
+                    "load or reload Ableton Agent Hub.amxd in the current Set"
                 )
             reply_socket.settimeout(min(remaining, 0.2))
             try:

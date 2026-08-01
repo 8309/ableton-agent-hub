@@ -82,6 +82,22 @@ class PublicBoundaryTest(unittest.TestCase):
                 mismatches.append(relative)
         self.assertEqual([], mismatches)
 
+    def test_public_product_files_are_not_overwritten_by_export(self) -> None:
+        from tools.export_from_workspace import PUBLIC_OWNED_PATHS
+
+        manifest = json.loads((ROOT / "PUBLIC_EXPORT_MANIFEST.json").read_text())
+        exported = {Path(relative) for relative in manifest["files"]}
+        self.assertTrue(PUBLIC_OWNED_PATHS.isdisjoint(exported))
+
+    def test_public_product_name_replaces_legacy_device_name(self) -> None:
+        searchable = (
+            ROOT / "ableton_agent" / "python" / "ableton_bridge" / "client.py",
+            ROOT / "ableton_agent" / "python" / "ableton_bridge" / "server.py",
+        )
+        combined = "\n".join(path.read_text(encoding="utf-8") for path in searchable)
+        self.assertNotIn("Ableton Agent Bridge.amxd", combined)
+        self.assertNotIn("Ableton Agent Bridge listening at", combined)
+
 
 if __name__ == "__main__":
     unittest.main()

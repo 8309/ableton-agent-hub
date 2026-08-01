@@ -57,7 +57,7 @@ class AbletonBridgeClient:
                 if remaining <= 0:
                     raise BridgeTimeoutError(
                         f"No reply from Max for Live on UDP {self.reply_port}; "
-                        "load Ableton Agent Bridge.amxd in the current Set"
+                        "load or reload Ableton Agent Hub.amxd in the current Set"
                     )
                 reply_socket.settimeout(min(remaining, 0.2))
                 try:

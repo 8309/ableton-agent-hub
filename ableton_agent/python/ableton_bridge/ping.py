@@ -40,8 +40,8 @@ def ping(
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise PingTimeoutError(
-                    f"No pong from Ableton Agent Ping on UDP {reply_port}; "
-                    "load Ableton Agent Ping.amxd in the current Set"
+                    f"No pong from Ableton Agent Hub on UDP {reply_port}; "
+                    "load or reload Ableton Agent Hub.amxd in the current Set"
                 )
             reply_socket.settimeout(min(remaining, 0.2))
             try:
@@ -60,7 +60,7 @@ def ping(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Ping Ableton Agent Ping.amxd")
+    parser = argparse.ArgumentParser(description="Ping Ableton Agent Hub.amxd")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--command-port", type=int, default=7400)
     parser.add_argument("--reply-port", type=int, default=7401)
