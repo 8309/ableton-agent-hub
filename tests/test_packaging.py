@@ -25,6 +25,7 @@ class PackagingTest(unittest.TestCase):
             "docs/getting_started.md",
             "docs/safety_model.md",
             "docs/live_api_limits.md",
+            "docs/release_validation_v0.1.0-alpha.md",
             "docs/api_capability_matrix.md",
         )
         self.assertEqual([], [relative for relative in expected if not (ROOT / relative).is_file()])

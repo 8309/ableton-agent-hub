@@ -32,3 +32,5 @@ This version is a release candidate and has not been tagged or published yet.
 - Arbitrary samples must be dragged into Simpler or Drum Rack manually.
 - Group creation and track movement are planning-only.
 - The first alpha is validated only on the environment listed in the README.
+- A same-value tempo commit reports `changed:true` to indicate that the write
+  path executed; compare before, target, and readback values for numeric change.

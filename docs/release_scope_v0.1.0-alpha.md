@@ -72,17 +72,19 @@ Experimental means included and tested at a narrower scope, not absent.
   virtual environment.
 - Public README, license, changelog, contribution guide, safety model, setup
   guide, and API-limit documentation added.
+- Clean Windows checkout, deterministic Hub rebuild, wheel installation, actual
+  User Library installation, manual Hub reload, read, bounded-read, dry-run,
+  same-value commit, and readback validation completed. See
+  [the release validation record](release_validation_v0.1.0-alpha.md).
 
 ## Remaining Release Gate
 
 Before tagging the alpha:
 
-1. Build and test from a clean checkout.
-2. Install into a clean temporary destination.
-3. Run the public path/privacy scan.
-4. Install to the actual User Library and manually reload the Hub.
-5. Ping and run representative read, dry-run, minimal commit, and readback tests.
-6. Create the GitHub remote, tag, and release artifacts.
+1. Create the GitHub remote.
+2. Push the reviewed public history.
+3. Create the alpha tag and GitHub release.
+4. Upload the wheel, source archive, and checksum file.
 
 The [capability matrix](api_capability_matrix.md) remains the command-by-command
 source of truth.
