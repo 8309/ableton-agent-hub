@@ -1,111 +1,112 @@
 # Manual Sample Workflow
 
-Ableton Agent can choose and verify local sample paths, but public Max for Live APIs do not provide a supported way to load an arbitrary local audio file into Simpler or Drum Rack.
+Ableton Agent can discover or verify local sample paths, but the public Max for
+Live API does not provide a supported way to load an arbitrary file into
+Simpler or a Drum Rack pad.
 
 The supported workflow is:
 
-1. Agent picks sample candidates from the local index.
-2. Agent confirms the candidate path exists.
-3. User manually drags the chosen file into Simpler or a Drum Rack pad.
-4. Agent reads back the loaded sample path where Live exposes it.
-5. Agent continues with MIDI, mix, effects, sends, arrangement, routing, scenes, and meter checks.
+1. Discover or choose a candidate path.
+2. Verify that the file still exists.
+3. Drag the file into Live manually.
+4. Confirm the sample path that Live exposes.
+5. Continue with MIDI, mix, effects, arrangement, routing, and meter tools.
 
-## Pick Candidates
+## Build A Machine-Local Catalog
 
-Pick hihats:
+The public repository does not contain anyone's local catalog. Generate one on
+your own machine and keep it outside version control:
 
-```bash
-PYTHONPATH=ableton_agent/python python -m ableton_bridge.sample_picker --category hat --style garage --limit 5
+```powershell
+.\.venv\Scripts\python.exe -m ableton_bridge.sound_catalog scan `
+  --catalog .\local_sound_catalog.json
 ```
 
-Pick shakers:
+Search the generated catalog:
 
-```bash
-PYTHONPATH=ableton_agent/python python -m ableton_bridge.sample_picker --category shaker --limit 5
+```powershell
+.\.venv\Scripts\python.exe -m ableton_bridge.sound_catalog search `
+  --catalog .\local_sound_catalog.json `
+  --role percussion `
+  --limit 5
 ```
 
-Pick percussion by query:
+Catalog discovery does not mean the Agent can insert a preset or load a sample.
+Check the returned `exists`, `load_mode`, and `auto_insert` fields.
 
-```bash
-PYTHONPATH=ableton_agent/python python -m ableton_bridge.sample_picker --category perc --query rim --limit 5
+## Verify A Known Path
+
+Before recommending a file, verify it immediately:
+
+```powershell
+.\.venv\Scripts\python.exe -m ableton_bridge.sample_index `
+  --sample-path "C:\path\to\sample.wav" `
+  --index-path .\local_sample_index.json
 ```
 
-Returned candidates are filtered so `exists` is true. If an indexed path is missing, the picker can refresh nearby folders and use the updated index.
+If an indexed path is missing, the helper can rescan nearby category folders and
+report replacement candidates. It must not claim a missing file is usable.
 
-## Manual Drag-In
+## Drag Into Live
 
 For Simpler:
 
-1. Select the target track.
-2. Drop the sample onto Simpler.
-3. Keep the target device visible if you want immediate visual confirmation.
+1. Select the target MIDI track.
+2. Open Simpler.
+3. Drop the file on the sample display.
+4. Confirm that the waveform and sample name appear.
 
 For Drum Rack:
 
 1. Open the Drum Rack.
-2. Drop the sample onto the intended pad.
-3. The visible pad label should change to the sample name.
+2. Select the intended pad.
+3. Drop the file directly on that pad.
+4. Confirm the pad label and nested sample device.
 
-## Confirm Loaded Sample
+## Confirm The Loaded Sample
 
-Scan loaded samples first:
+Scan loaded samples without broad Drum Rack traversal:
 
-```bash
-PYTHONPATH=ableton_agent/python python -m ableton_bridge.sample_confirm --action scan_loaded_samples --limit 12
+```powershell
+.\.venv\Scripts\python.exe -m ableton_bridge.sample_confirm `
+  --action scan_loaded_samples `
+  --limit 12
 ```
 
-Then confirm a chosen scan result:
+Confirm one scan candidate against the intended path:
 
-```bash
-PYTHONPATH=ableton_agent/python python -m ableton_bridge.sample_confirm --candidate-index 0 --intended-path "C:\path\to\sample.aif"
+```powershell
+.\.venv\Scripts\python.exe -m ableton_bridge.sample_confirm `
+  --candidate-index 0 `
+  --intended-path "C:\path\to\sample.wav"
 ```
 
-Confirm a manually loaded Drum Rack pad:
+Target a known Simpler:
 
-```bash
-PYTHONPATH=ableton_agent/python python -m ableton_bridge.sample_confirm --track-index 7 --target drum_rack_pad --pad-index 42 --intended-path "C:\path\to\sample.aif"
+```powershell
+.\.venv\Scripts\python.exe -m ableton_bridge.sample_confirm `
+  --track-index 5 `
+  --target simpler `
+  --intended-path "C:\path\to\sample.wav"
 ```
 
-Confirm a Simpler:
+Target a known Drum Rack pad:
 
-```bash
-PYTHONPATH=ableton_agent/python python -m ableton_bridge.sample_confirm --track-index 5 --target simpler --intended-path "C:\path\to\sample.aif"
+```powershell
+.\.venv\Scripts\python.exe -m ableton_bridge.sample_confirm `
+  --track-index 7 `
+  --target drum_rack_pad `
+  --pad-note 42 `
+  --intended-path "C:\path\to\sample.wav"
 ```
 
 Interpretation:
 
-- `candidate_index` is produced by `scan_loaded_samples`.
-- `exact_match: true` means Live is using that exact filesystem path.
-- `basename_match: true` means the loaded file name matches, even if Live copied the file into the project.
-- A project copy usually appears under:
+- `exact_match: true` means Live reports the same path.
+- `basename_match: true` can mean Live copied the same named sample into the
+  project, commonly under `Samples/Imported`.
+- A missing result is not proof that no sample is loaded; Drum Rack traversal is
+  best-effort and should be checked in the Live UI.
 
-```text
-Current Project/Samples/Imported/
-```
-
-## Current UKG Hihat
-
-Original chosen path:
-
-```text
-C:\ProgramData\Ableton\Live 12 Trial\Resources\Core Library\Samples\One Shots\Drums\Hihat\Hihat Closed Sharp Garage.aif
-```
-
-Live-confirmed project copy:
-
-```text
-C:/path/to/Ableton Project/Samples/Imported/Hihat Closed Example.aif
-```
-
-Current Drum Rack confirmation:
-
-```text
-Track: 8-Top Percussion
-Pad index: 42
-MIDI note: 42
-Pad name: Hihat Closed Sharp Garage
-```
-
-## Known Limit
-
-`/load_sample` remains a validation/preparation route. It cannot perform arbitrary local file loading into Simpler or Drum Rack in the current public Max for Live API surface.
+`/load_sample` remains a path-validation/preparation route. It does not perform
+arbitrary sample loading.

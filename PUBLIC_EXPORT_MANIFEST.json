@@ -2,7 +2,7 @@
   "schema_version": 1,
   "source_commit": "54896fd0effaa87642a76db5712d8dcc719a55b4",
   "source_has_working_tree_overlay": true,
-  "exported_file_count": 114,
+  "exported_file_count": 113,
   "files": {
     "ableton_agent/dist/Ableton Agent Hub.amxd": "beb3376305560b4b54da59aeb713a86c902e61e0734830646f4f427b186139f0",
     "ableton_agent/dist/ableton_agent_arrangement_tools.js": "3152b5a7b7415a1b547f124f1378127242bacf43bee8073a95e6f4e05533abf2",
@@ -115,7 +115,6 @@
     "ableton_agent/styles/uk_garage.json": "51ad59b48292499f30c4d93a7269d18c86a294d8e6986daf982160384bb32371",
     "docs/api_capability_matrix.md": "17dae08ee8f4365a65807b04c974183e9016273239688d767693e8b358477957",
     "docs/group_track_workflow.md": "137ddbac710d2afd6d1b19b17c99091e304f0804d1bf1cc01df3f60d5d7ecb7a",
-    "docs/hub_workflow.md": "17b1b1dc2ec01c7cbca856bdbe22748cbbc5e0482125d008f03a493cdee2f21a",
     "tests/fixtures/.gitkeep": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
     "tests/test_ableton_bridge.py": "28fa21b246be50b757510fda658c4d8c84b699ac8db471c24b0a0522775d8de5"
   }

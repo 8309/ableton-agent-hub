@@ -74,6 +74,7 @@ class PublicBoundaryTest(unittest.TestCase):
 
     def test_export_manifest_matches_exported_snapshot(self) -> None:
         manifest = json.loads((ROOT / "PUBLIC_EXPORT_MANIFEST.json").read_text())
+        self.assertEqual(manifest["exported_file_count"], len(manifest["files"]))
         mismatches = []
         for relative, expected in manifest["files"].items():
             path = ROOT / relative

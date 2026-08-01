@@ -61,6 +61,7 @@ PUBLIC_OWNED_PATHS = {
     Path("ableton_agent/python/ableton_bridge/cli.py"),
     Path("ableton_agent/python/ableton_bridge/ping.py"),
     Path("ableton_agent/python/ableton_bridge/tempo.py"),
+    Path("docs/hub_workflow.md"),
 }
 
 PUBLIC_TEXT_REPLACEMENTS = {

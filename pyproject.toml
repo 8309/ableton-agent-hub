@@ -7,6 +7,8 @@ name = "ableton-agent-hub"
 version = "0.1.0a0"
 description = "Local Max for Live bridge and safe Python toolkit for Ableton Live"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [
   { name = "Ableton Agent Hub contributors" },
