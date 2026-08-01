@@ -1,0 +1,13 @@
+* text=auto eol=lf
+
+*.amxd binary
+*.aif binary
+*.aiff binary
+*.flac binary
+*.gif binary
+*.jpeg binary
+*.jpg binary
+*.mp3 binary
+*.png binary
+*.wav binary
+*.whl binary

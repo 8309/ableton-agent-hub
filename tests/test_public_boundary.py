@@ -14,6 +14,11 @@ sys.path.insert(0, str(ROOT / "ableton_agent"))
 
 
 class PublicBoundaryTest(unittest.TestCase):
+    def test_repository_fixes_text_line_endings_for_stable_hashes(self) -> None:
+        attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+        self.assertIn("* text=auto eol=lf", attributes)
+        self.assertIn("*.amxd binary", attributes)
+
     def test_private_workspace_content_is_absent(self) -> None:
         forbidden = (
             "AGENTS.md",
