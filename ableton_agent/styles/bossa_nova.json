@@ -1,0 +1,57 @@
+{
+  "name": "Bossa Nova",
+  "slug": "bossa_nova",
+  "role_keywords": [
+    {"role": "drums", "keywords": ["drum", "kit", "brush", "kick", "snare"]},
+    {"role": "percussion", "keywords": ["perc", "shaker", "clave", "rim", "bongo"]},
+    {"role": "bass", "keywords": ["bass", "upright", "sub", "operator"]},
+    {"role": "chords", "keywords": ["chord", "guitar", "piano", "rhodes", "keys"]},
+    {"role": "lead", "keywords": ["lead", "melody", "flute", "sax", "guitar"]},
+    {"role": "pad", "keywords": ["pad", "string", "texture"]},
+    {"role": "sample", "keywords": ["sample", "vocal", "room", "simpler"]}
+  ],
+  "roles": {
+    "drums": {
+      "instrument": "Drum Rack",
+      "effects": ["eq", "reverb"],
+      "mix": {"volume": 0.66, "pan": 0.0, "send:A": 0.14, "send:B": 0.02},
+      "parameters": []
+    },
+    "percussion": {
+      "instrument": "Drum Rack",
+      "effects": ["eq", "reverb"],
+      "mix": {"volume": 0.6, "pan": 0.18, "send:A": 0.16, "send:B": 0.04},
+      "parameters": []
+    },
+    "bass": {
+      "instrument": "Operator",
+      "effects": ["filter", "utility"],
+      "mix": {"volume": 0.7, "pan": 0.0, "send:A": 0.02, "send:B": 0.0},
+      "parameters": [{"match": "filter freq", "value": 0.44}]
+    },
+    "chords": {
+      "instrument": "Electric",
+      "effects": ["eq", "reverb", "chorus"],
+      "mix": {"volume": 0.68, "pan": -0.08, "send:A": 0.18, "send:B": 0.04},
+      "parameters": [{"match": "chorus", "value": 18.0}]
+    },
+    "lead": {
+      "instrument": "Drift",
+      "effects": ["reverb", "delay"],
+      "mix": {"volume": 0.58, "pan": 0.08, "send:A": 0.16, "send:B": 0.08},
+      "parameters": []
+    },
+    "pad": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "reverb"],
+      "mix": {"volume": 0.46, "pan": -0.12, "send:A": 0.2, "send:B": 0.04},
+      "parameters": []
+    },
+    "sample": {
+      "instrument": "Simpler",
+      "effects": ["eq", "reverb"],
+      "mix": {"volume": 0.54, "pan": 0.0, "send:A": 0.14, "send:B": 0.06},
+      "parameters": []
+    }
+  }
+}

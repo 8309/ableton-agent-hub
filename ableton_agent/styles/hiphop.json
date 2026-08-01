@@ -1,0 +1,57 @@
+{
+  "name": "Hip-hop",
+  "slug": "hiphop",
+  "role_keywords": [
+    {"role": "drums", "keywords": ["drum", "kit", "kick", "snare", "boom bap"]},
+    {"role": "percussion", "keywords": ["hat", "perc", "shaker", "rim"]},
+    {"role": "bass", "keywords": ["bass", "808", "sub", "operator"]},
+    {"role": "chords", "keywords": ["chord", "keys", "piano", "rhodes", "sample"]},
+    {"role": "lead", "keywords": ["lead", "melody", "hook", "synth"]},
+    {"role": "pad", "keywords": ["pad", "texture", "string"]},
+    {"role": "sample", "keywords": ["sample", "vocal", "loop", "chop", "simpler"]}
+  ],
+  "roles": {
+    "drums": {
+      "instrument": "Drum Rack",
+      "effects": ["drumbuss", "eq", "compressor"],
+      "mix": {"volume": 0.82, "pan": 0.0, "send:A": 0.06, "send:B": 0.02},
+      "parameters": [{"match": "drbuss amount", "value": 10.0}]
+    },
+    "percussion": {
+      "instrument": "Drum Rack",
+      "effects": ["eq", "filter"],
+      "mix": {"volume": 0.58, "pan": 0.12, "send:A": 0.08, "send:B": 0.04},
+      "parameters": []
+    },
+    "bass": {
+      "instrument": "Operator",
+      "effects": ["saturator", "utility", "compressor"],
+      "mix": {"volume": 0.82, "pan": 0.0, "send:A": 0.0, "send:B": 0.0},
+      "parameters": [{"match": "filter freq", "value": 0.4}]
+    },
+    "chords": {
+      "instrument": "Electric",
+      "effects": ["eq", "reverb", "chorus"],
+      "mix": {"volume": 0.62, "pan": -0.08, "send:A": 0.18, "send:B": 0.06},
+      "parameters": []
+    },
+    "lead": {
+      "instrument": "Drift",
+      "effects": ["delay", "reverb"],
+      "mix": {"volume": 0.6, "pan": 0.08, "send:A": 0.14, "send:B": 0.12},
+      "parameters": []
+    },
+    "pad": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "reverb"],
+      "mix": {"volume": 0.5, "pan": -0.12, "send:A": 0.22, "send:B": 0.06},
+      "parameters": []
+    },
+    "sample": {
+      "instrument": "Simpler",
+      "effects": ["filter", "eq", "delay"],
+      "mix": {"volume": 0.66, "pan": 0.0, "send:A": 0.12, "send:B": 0.08},
+      "parameters": []
+    }
+  }
+}

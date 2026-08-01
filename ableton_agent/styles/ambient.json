@@ -1,0 +1,57 @@
+{
+  "name": "Ambient",
+  "slug": "ambient",
+  "role_keywords": [
+    {"role": "drums", "keywords": ["drum", "pulse", "soft kick", "kit"]},
+    {"role": "percussion", "keywords": ["perc", "shaker", "texture", "noise"]},
+    {"role": "bass", "keywords": ["bass", "sub", "drone", "operator"]},
+    {"role": "chords", "keywords": ["chord", "keys", "piano", "rhodes"]},
+    {"role": "lead", "keywords": ["lead", "melody", "motif", "synth"]},
+    {"role": "pad", "keywords": ["pad", "drone", "atmos", "texture", "wash"]},
+    {"role": "sample", "keywords": ["sample", "field", "vocal", "simpler"]}
+  ],
+  "roles": {
+    "drums": {
+      "instrument": "Drum Rack",
+      "effects": ["eq", "reverb"],
+      "mix": {"volume": 0.48, "pan": 0.0, "send:A": 0.22, "send:B": 0.06},
+      "parameters": []
+    },
+    "percussion": {
+      "instrument": "Drum Rack",
+      "effects": ["filter", "reverb", "delay"],
+      "mix": {"volume": 0.44, "pan": 0.2, "send:A": 0.28, "send:B": 0.12},
+      "parameters": []
+    },
+    "bass": {
+      "instrument": "Operator",
+      "effects": ["filter", "reverb", "utility"],
+      "mix": {"volume": 0.52, "pan": 0.0, "send:A": 0.14, "send:B": 0.02},
+      "parameters": [{"match": "filter freq", "value": 0.3}]
+    },
+    "chords": {
+      "instrument": "Electric",
+      "effects": ["reverb", "chorus", "delay"],
+      "mix": {"volume": 0.56, "pan": -0.08, "send:A": 0.34, "send:B": 0.12},
+      "parameters": []
+    },
+    "lead": {
+      "instrument": "Drift",
+      "effects": ["delay", "reverb", "filter"],
+      "mix": {"volume": 0.5, "pan": 0.1, "send:A": 0.3, "send:B": 0.16},
+      "parameters": []
+    },
+    "pad": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "reverb", "utility"],
+      "mix": {"volume": 0.58, "pan": -0.12, "send:A": 0.38, "send:B": 0.1},
+      "parameters": []
+    },
+    "sample": {
+      "instrument": "Simpler",
+      "effects": ["filter", "reverb", "delay"],
+      "mix": {"volume": 0.5, "pan": 0.0, "send:A": 0.32, "send:B": 0.14},
+      "parameters": []
+    }
+  }
+}

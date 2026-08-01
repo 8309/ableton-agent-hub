@@ -1,0 +1,57 @@
+{
+  "name": "Trap",
+  "slug": "trap",
+  "role_keywords": [
+    {"role": "drums", "keywords": ["drum", "kit", "808", "kick", "snare", "clap"]},
+    {"role": "percussion", "keywords": ["hat", "roll", "perc", "rim", "shaker"]},
+    {"role": "bass", "keywords": ["808", "bass", "sub", "operator"]},
+    {"role": "chords", "keywords": ["chord", "keys", "piano", "bell", "rhodes"]},
+    {"role": "lead", "keywords": ["lead", "pluck", "bell", "melody"]},
+    {"role": "pad", "keywords": ["pad", "choir", "texture"]},
+    {"role": "sample", "keywords": ["sample", "vocal", "vox", "simpler"]}
+  ],
+  "roles": {
+    "drums": {
+      "instrument": "Drum Rack",
+      "effects": ["drumbuss", "eq"],
+      "mix": {"volume": 0.84, "pan": 0.0, "send:A": 0.04, "send:B": 0.02},
+      "parameters": [{"match": "drbuss amount", "value": 10.0}]
+    },
+    "percussion": {
+      "instrument": "Drum Rack",
+      "effects": ["eq", "filter"],
+      "mix": {"volume": 0.64, "pan": 0.12, "send:A": 0.08, "send:B": 0.06},
+      "parameters": []
+    },
+    "bass": {
+      "instrument": "Operator",
+      "effects": ["saturator", "utility", "compressor"],
+      "mix": {"volume": 0.86, "pan": 0.0, "send:A": 0.0, "send:B": 0.0},
+      "parameters": [{"match": "transpose", "value": -12.0}]
+    },
+    "chords": {
+      "instrument": "Electric",
+      "effects": ["reverb", "eq", "delay"],
+      "mix": {"volume": 0.58, "pan": -0.08, "send:A": 0.22, "send:B": 0.08},
+      "parameters": []
+    },
+    "lead": {
+      "instrument": "Drift",
+      "effects": ["delay", "reverb", "filter"],
+      "mix": {"volume": 0.62, "pan": 0.08, "send:A": 0.18, "send:B": 0.16},
+      "parameters": []
+    },
+    "pad": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "reverb"],
+      "mix": {"volume": 0.5, "pan": -0.14, "send:A": 0.28, "send:B": 0.08},
+      "parameters": []
+    },
+    "sample": {
+      "instrument": "Simpler",
+      "effects": ["filter", "reverb", "delay"],
+      "mix": {"volume": 0.62, "pan": 0.0, "send:A": 0.16, "send:B": 0.12},
+      "parameters": []
+    }
+  }
+}

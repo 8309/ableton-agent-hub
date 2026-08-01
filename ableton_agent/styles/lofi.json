@@ -1,0 +1,57 @@
+{
+  "name": "Lo-fi",
+  "slug": "lofi",
+  "role_keywords": [
+    {"role": "drums", "keywords": ["drum", "kit", "kick", "snare", "dusty"]},
+    {"role": "percussion", "keywords": ["hat", "perc", "shaker", "vinyl", "top"]},
+    {"role": "bass", "keywords": ["bass", "sub", "upright", "operator"]},
+    {"role": "chords", "keywords": ["chord", "rhodes", "keys", "piano", "electric"]},
+    {"role": "lead", "keywords": ["lead", "melody", "pluck", "guitar"]},
+    {"role": "pad", "keywords": ["pad", "tape", "texture", "noise"]},
+    {"role": "sample", "keywords": ["sample", "vinyl", "vocal", "simpler"]}
+  ],
+  "roles": {
+    "drums": {
+      "instrument": "Drum Rack",
+      "effects": ["drumbuss", "eq", "redux"],
+      "mix": {"volume": 0.72, "pan": 0.0, "send:A": 0.08, "send:B": 0.04},
+      "parameters": [{"match": "drbuss amount", "value": 8.0}]
+    },
+    "percussion": {
+      "instrument": "Drum Rack",
+      "effects": ["eq", "reverb"],
+      "mix": {"volume": 0.54, "pan": 0.18, "send:A": 0.16, "send:B": 0.06},
+      "parameters": []
+    },
+    "bass": {
+      "instrument": "Operator",
+      "effects": ["filter", "saturator", "utility"],
+      "mix": {"volume": 0.68, "pan": 0.0, "send:A": 0.04, "send:B": 0.0},
+      "parameters": [{"match": "filter freq", "value": 0.36}]
+    },
+    "chords": {
+      "instrument": "Electric",
+      "effects": ["chorus", "reverb", "eq"],
+      "mix": {"volume": 0.62, "pan": -0.08, "send:A": 0.24, "send:B": 0.08},
+      "parameters": [{"match": "chorus", "value": 36.0}]
+    },
+    "lead": {
+      "instrument": "Drift",
+      "effects": ["delay", "reverb", "filter"],
+      "mix": {"volume": 0.56, "pan": 0.1, "send:A": 0.22, "send:B": 0.12},
+      "parameters": []
+    },
+    "pad": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "reverb", "utility"],
+      "mix": {"volume": 0.48, "pan": -0.14, "send:A": 0.3, "send:B": 0.08},
+      "parameters": []
+    },
+    "sample": {
+      "instrument": "Simpler",
+      "effects": ["filter", "redux", "reverb"],
+      "mix": {"volume": 0.58, "pan": 0.0, "send:A": 0.18, "send:B": 0.08},
+      "parameters": []
+    }
+  }
+}

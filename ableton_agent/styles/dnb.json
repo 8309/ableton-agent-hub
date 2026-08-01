@@ -1,0 +1,57 @@
+{
+  "name": "Drum and Bass",
+  "slug": "dnb",
+  "role_keywords": [
+    {"role": "drums", "keywords": ["drum", "break", "amen", "kit", "kick", "snare"]},
+    {"role": "percussion", "keywords": ["hat", "perc", "ghost", "ride", "top"]},
+    {"role": "bass", "keywords": ["bass", "sub", "reese", "wobble", "operator"]},
+    {"role": "chords", "keywords": ["chord", "keys", "rhodes", "stab"]},
+    {"role": "lead", "keywords": ["lead", "hook", "arp", "synth"]},
+    {"role": "pad", "keywords": ["pad", "atmos", "texture"]},
+    {"role": "sample", "keywords": ["sample", "vocal", "fx", "simpler"]}
+  ],
+  "roles": {
+    "drums": {
+      "instrument": "Drum Rack",
+      "effects": ["drumbuss", "compressor", "eq"],
+      "mix": {"volume": 0.86, "pan": 0.0, "send:A": 0.04, "send:B": 0.02},
+      "parameters": [{"match": "drbuss transient", "value": 112.0}]
+    },
+    "percussion": {
+      "instrument": "Drum Rack",
+      "effects": ["eq", "filter"],
+      "mix": {"volume": 0.62, "pan": 0.14, "send:A": 0.08, "send:B": 0.06},
+      "parameters": []
+    },
+    "bass": {
+      "instrument": "Operator",
+      "effects": ["saturator", "filter", "utility"],
+      "mix": {"volume": 0.84, "pan": 0.0, "send:A": 0.0, "send:B": 0.0},
+      "parameters": [{"match": "filter freq", "value": 0.38}]
+    },
+    "chords": {
+      "instrument": "Electric",
+      "effects": ["chorus", "reverb", "eq"],
+      "mix": {"volume": 0.58, "pan": -0.1, "send:A": 0.18, "send:B": 0.08},
+      "parameters": []
+    },
+    "lead": {
+      "instrument": "Drift",
+      "effects": ["delay", "filter"],
+      "mix": {"volume": 0.6, "pan": 0.1, "send:A": 0.1, "send:B": 0.1},
+      "parameters": []
+    },
+    "pad": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "reverb"],
+      "mix": {"volume": 0.52, "pan": -0.12, "send:A": 0.24, "send:B": 0.06},
+      "parameters": []
+    },
+    "sample": {
+      "instrument": "Simpler",
+      "effects": ["filter", "redux", "delay"],
+      "mix": {"volume": 0.6, "pan": 0.0, "send:A": 0.12, "send:B": 0.12},
+      "parameters": []
+    }
+  }
+}

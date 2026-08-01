@@ -1,0 +1,57 @@
+{
+  "name": "Techno",
+  "slug": "techno",
+  "role_keywords": [
+    {"role": "drums", "keywords": ["drum", "kick", "kit", "909", "rumble"]},
+    {"role": "percussion", "keywords": ["perc", "hat", "ride", "shaker", "metal"]},
+    {"role": "bass", "keywords": ["bass", "sub", "rumble", "operator"]},
+    {"role": "chords", "keywords": ["chord", "stab", "minor", "keys"]},
+    {"role": "lead", "keywords": ["lead", "acid", "sequence", "seq", "synth"]},
+    {"role": "pad", "keywords": ["pad", "drone", "atmos", "texture"]},
+    {"role": "sample", "keywords": ["sample", "vox", "noise", "simpler"]}
+  ],
+  "roles": {
+    "drums": {
+      "instrument": "Drum Rack",
+      "effects": ["drumbuss", "saturator", "eq"],
+      "mix": {"volume": 0.86, "pan": 0.0, "send:A": 0.04, "send:B": 0.02},
+      "parameters": [{"match": "drbuss drive", "value": 20.0}]
+    },
+    "percussion": {
+      "instrument": "Drum Rack",
+      "effects": ["filter", "delay", "eq"],
+      "mix": {"volume": 0.64, "pan": 0.16, "send:A": 0.08, "send:B": 0.14},
+      "parameters": []
+    },
+    "bass": {
+      "instrument": "Operator",
+      "effects": ["saturator", "filter", "compressor"],
+      "mix": {"volume": 0.82, "pan": 0.0, "send:A": 0.02, "send:B": 0.0},
+      "parameters": [{"match": "filter frequency", "value": 0.42}]
+    },
+    "chords": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "delay", "reverb"],
+      "mix": {"volume": 0.6, "pan": -0.08, "send:A": 0.12, "send:B": 0.16},
+      "parameters": []
+    },
+    "lead": {
+      "instrument": "Drift",
+      "effects": ["filter", "saturator", "delay"],
+      "mix": {"volume": 0.64, "pan": 0.08, "send:A": 0.1, "send:B": 0.14},
+      "parameters": []
+    },
+    "pad": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "reverb", "utility"],
+      "mix": {"volume": 0.5, "pan": -0.14, "send:A": 0.26, "send:B": 0.08},
+      "parameters": []
+    },
+    "sample": {
+      "instrument": "Simpler",
+      "effects": ["filter", "redux", "delay"],
+      "mix": {"volume": 0.58, "pan": 0.0, "send:A": 0.08, "send:B": 0.18},
+      "parameters": []
+    }
+  }
+}

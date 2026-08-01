@@ -1,0 +1,57 @@
+{
+  "name": "Detroit Techno",
+  "slug": "techno_detroit",
+  "role_keywords": [
+    {"role": "drums", "keywords": ["drum", "kick", "kit", "909", "707"]},
+    {"role": "percussion", "keywords": ["perc", "hat", "ride", "shaker", "rim"]},
+    {"role": "bass", "keywords": ["bass", "sub", "operator", "funk"]},
+    {"role": "chords", "keywords": ["chord", "stab", "keys", "minor", "jazz"]},
+    {"role": "lead", "keywords": ["lead", "sequence", "seq", "synth", "hook"]},
+    {"role": "pad", "keywords": ["pad", "string", "soul", "atmos", "texture"]},
+    {"role": "sample", "keywords": ["sample", "vox", "vocal", "noise", "simpler"]}
+  ],
+  "roles": {
+    "drums": {
+      "instrument": "Drum Rack",
+      "effects": ["drumbuss", "eq", "compressor"],
+      "mix": {"volume": 0.84, "pan": 0.0, "send:A": 0.06, "send:B": 0.04},
+      "parameters": [{"match": "drbuss drive", "value": 14.0}]
+    },
+    "percussion": {
+      "instrument": "Drum Rack",
+      "effects": ["eq", "delay", "reverb"],
+      "mix": {"volume": 0.62, "pan": 0.16, "send:A": 0.12, "send:B": 0.14},
+      "parameters": []
+    },
+    "bass": {
+      "instrument": "Operator",
+      "effects": ["filter", "saturator", "compressor"],
+      "mix": {"volume": 0.78, "pan": 0.0, "send:A": 0.02, "send:B": 0.02},
+      "parameters": [{"match": "filter frequency", "value": 0.48}]
+    },
+    "chords": {
+      "instrument": "Electric",
+      "effects": ["chorus", "delay", "reverb"],
+      "mix": {"volume": 0.64, "pan": -0.08, "send:A": 0.18, "send:B": 0.18},
+      "parameters": [{"match": "chorus", "value": 28.0}]
+    },
+    "lead": {
+      "instrument": "Drift",
+      "effects": ["filter", "delay", "saturator"],
+      "mix": {"volume": 0.62, "pan": 0.08, "send:A": 0.1, "send:B": 0.16},
+      "parameters": []
+    },
+    "pad": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "reverb", "chorus"],
+      "mix": {"volume": 0.52, "pan": -0.12, "send:A": 0.28, "send:B": 0.08},
+      "parameters": []
+    },
+    "sample": {
+      "instrument": "Simpler",
+      "effects": ["filter", "delay", "reverb"],
+      "mix": {"volume": 0.56, "pan": 0.0, "send:A": 0.12, "send:B": 0.16},
+      "parameters": []
+    }
+  }
+}

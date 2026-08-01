@@ -1,0 +1,57 @@
+{
+  "name": "Peak Time Techno",
+  "slug": "techno_peak_time",
+  "role_keywords": [
+    {"role": "drums", "keywords": ["drum", "kick", "kit", "peak", "big"]},
+    {"role": "percussion", "keywords": ["perc", "hat", "ride", "shaker", "top"]},
+    {"role": "bass", "keywords": ["bass", "sub", "rumble", "operator"]},
+    {"role": "chords", "keywords": ["chord", "stab", "rave", "keys"]},
+    {"role": "lead", "keywords": ["lead", "rave", "sequence", "seq", "synth"]},
+    {"role": "pad", "keywords": ["pad", "rise", "atmos", "texture"]},
+    {"role": "sample", "keywords": ["sample", "vox", "impact", "noise", "simpler"]}
+  ],
+  "roles": {
+    "drums": {
+      "instrument": "Drum Rack",
+      "effects": ["drumbuss", "saturator", "compressor"],
+      "mix": {"volume": 0.9, "pan": 0.0, "send:A": 0.04, "send:B": 0.02},
+      "parameters": [{"match": "drbuss amount", "value": 18.0}]
+    },
+    "percussion": {
+      "instrument": "Drum Rack",
+      "effects": ["eq", "delay", "filter"],
+      "mix": {"volume": 0.66, "pan": 0.14, "send:A": 0.08, "send:B": 0.14},
+      "parameters": []
+    },
+    "bass": {
+      "instrument": "Operator",
+      "effects": ["saturator", "filter", "compressor"],
+      "mix": {"volume": 0.86, "pan": 0.0, "send:A": 0.0, "send:B": 0.0},
+      "parameters": [{"match": "filter freq", "value": 0.44}]
+    },
+    "chords": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "delay", "reverb"],
+      "mix": {"volume": 0.58, "pan": -0.06, "send:A": 0.1, "send:B": 0.18},
+      "parameters": []
+    },
+    "lead": {
+      "instrument": "Drift",
+      "effects": ["filter", "saturator", "delay"],
+      "mix": {"volume": 0.72, "pan": 0.08, "send:A": 0.08, "send:B": 0.2},
+      "parameters": [{"match": "filter frequency", "value": 0.58}]
+    },
+    "pad": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "reverb", "delay"],
+      "mix": {"volume": 0.46, "pan": -0.12, "send:A": 0.24, "send:B": 0.1},
+      "parameters": []
+    },
+    "sample": {
+      "instrument": "Simpler",
+      "effects": ["filter", "redux", "delay"],
+      "mix": {"volume": 0.6, "pan": 0.0, "send:A": 0.1, "send:B": 0.18},
+      "parameters": []
+    }
+  }
+}

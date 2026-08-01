@@ -1,0 +1,57 @@
+{
+  "name": "Minimal Techno",
+  "slug": "techno_minimal",
+  "role_keywords": [
+    {"role": "drums", "keywords": ["drum", "kick", "kit", "click", "micro"]},
+    {"role": "percussion", "keywords": ["perc", "hat", "tick", "rim", "top"]},
+    {"role": "bass", "keywords": ["bass", "sub", "operator", "pulse"]},
+    {"role": "chords", "keywords": ["chord", "stab", "keys"]},
+    {"role": "lead", "keywords": ["lead", "blip", "sequence", "seq", "synth"]},
+    {"role": "pad", "keywords": ["pad", "drone", "atmos", "texture"]},
+    {"role": "sample", "keywords": ["sample", "click", "noise", "vox", "simpler"]}
+  ],
+  "roles": {
+    "drums": {
+      "instrument": "Drum Rack",
+      "effects": ["eq", "drumbuss"],
+      "mix": {"volume": 0.78, "pan": 0.0, "send:A": 0.04, "send:B": 0.02},
+      "parameters": [{"match": "drbuss amount", "value": 8.0}]
+    },
+    "percussion": {
+      "instrument": "Drum Rack",
+      "effects": ["filter", "delay", "eq"],
+      "mix": {"volume": 0.52, "pan": 0.22, "send:A": 0.08, "send:B": 0.18},
+      "parameters": []
+    },
+    "bass": {
+      "instrument": "Operator",
+      "effects": ["filter", "utility"],
+      "mix": {"volume": 0.72, "pan": 0.0, "send:A": 0.0, "send:B": 0.0},
+      "parameters": [{"match": "filter freq", "value": 0.34}]
+    },
+    "chords": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "delay"],
+      "mix": {"volume": 0.48, "pan": -0.08, "send:A": 0.08, "send:B": 0.16},
+      "parameters": []
+    },
+    "lead": {
+      "instrument": "Drift",
+      "effects": ["filter", "delay"],
+      "mix": {"volume": 0.56, "pan": 0.1, "send:A": 0.06, "send:B": 0.18},
+      "parameters": []
+    },
+    "pad": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "reverb"],
+      "mix": {"volume": 0.42, "pan": -0.16, "send:A": 0.22, "send:B": 0.06},
+      "parameters": []
+    },
+    "sample": {
+      "instrument": "Simpler",
+      "effects": ["filter", "redux", "delay"],
+      "mix": {"volume": 0.48, "pan": 0.0, "send:A": 0.06, "send:B": 0.2},
+      "parameters": []
+    }
+  }
+}

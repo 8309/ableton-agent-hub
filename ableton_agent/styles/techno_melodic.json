@@ -1,0 +1,57 @@
+{
+  "name": "Melodic Techno",
+  "slug": "techno_melodic",
+  "role_keywords": [
+    {"role": "drums", "keywords": ["drum", "kick", "kit", "909"]},
+    {"role": "percussion", "keywords": ["perc", "hat", "shaker", "ride"]},
+    {"role": "bass", "keywords": ["bass", "sub", "operator"]},
+    {"role": "chords", "keywords": ["chord", "keys", "minor", "progression", "stab"]},
+    {"role": "lead", "keywords": ["lead", "melody", "arp", "sequence", "synth"]},
+    {"role": "pad", "keywords": ["pad", "string", "atmos", "texture"]},
+    {"role": "sample", "keywords": ["sample", "vocal", "vox", "simpler"]}
+  ],
+  "roles": {
+    "drums": {
+      "instrument": "Drum Rack",
+      "effects": ["drumbuss", "eq"],
+      "mix": {"volume": 0.8, "pan": 0.0, "send:A": 0.06, "send:B": 0.02},
+      "parameters": [{"match": "drbuss amount", "value": 10.0}]
+    },
+    "percussion": {
+      "instrument": "Drum Rack",
+      "effects": ["eq", "delay", "reverb"],
+      "mix": {"volume": 0.58, "pan": 0.16, "send:A": 0.12, "send:B": 0.12},
+      "parameters": []
+    },
+    "bass": {
+      "instrument": "Operator",
+      "effects": ["filter", "saturator", "compressor"],
+      "mix": {"volume": 0.78, "pan": 0.0, "send:A": 0.02, "send:B": 0.0},
+      "parameters": [{"match": "filter frequency", "value": 0.42}]
+    },
+    "chords": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "reverb", "delay"],
+      "mix": {"volume": 0.64, "pan": -0.08, "send:A": 0.22, "send:B": 0.16},
+      "parameters": []
+    },
+    "lead": {
+      "instrument": "Drift",
+      "effects": ["filter", "delay", "reverb"],
+      "mix": {"volume": 0.66, "pan": 0.08, "send:A": 0.16, "send:B": 0.22},
+      "parameters": []
+    },
+    "pad": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "reverb", "chorus"],
+      "mix": {"volume": 0.56, "pan": -0.12, "send:A": 0.32, "send:B": 0.1},
+      "parameters": []
+    },
+    "sample": {
+      "instrument": "Simpler",
+      "effects": ["filter", "reverb", "delay"],
+      "mix": {"volume": 0.56, "pan": 0.0, "send:A": 0.16, "send:B": 0.16},
+      "parameters": []
+    }
+  }
+}

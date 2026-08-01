@@ -1,0 +1,57 @@
+{
+  "name": "House",
+  "slug": "house",
+  "role_keywords": [
+    {"role": "drums", "keywords": ["drum", "kit", "kick", "clap", "house kit"]},
+    {"role": "percussion", "keywords": ["perc", "hat", "shaker", "ride", "top"]},
+    {"role": "bass", "keywords": ["bass", "sub", "operator"]},
+    {"role": "chords", "keywords": ["chord", "stab", "keys", "piano", "rhodes", "electric"]},
+    {"role": "lead", "keywords": ["lead", "hook", "melody", "synth"]},
+    {"role": "pad", "keywords": ["pad", "string", "texture"]},
+    {"role": "sample", "keywords": ["sample", "vocal", "loop", "simpler"]}
+  ],
+  "roles": {
+    "drums": {
+      "instrument": "Drum Rack",
+      "effects": ["drumbuss", "eq", "compressor"],
+      "mix": {"volume": 0.84, "pan": 0.0, "send:A": 0.06, "send:B": 0.02},
+      "parameters": [{"match": "drbuss amount", "value": 14.0}]
+    },
+    "percussion": {
+      "instrument": "Drum Rack",
+      "effects": ["eq", "reverb"],
+      "mix": {"volume": 0.66, "pan": 0.18, "send:A": 0.12, "send:B": 0.08},
+      "parameters": []
+    },
+    "bass": {
+      "instrument": "Operator",
+      "effects": ["filter", "saturator", "compressor"],
+      "mix": {"volume": 0.8, "pan": 0.0, "send:A": 0.0, "send:B": 0.0},
+      "parameters": [{"match": "filter freq", "value": 0.5}]
+    },
+    "chords": {
+      "instrument": "Electric",
+      "effects": ["chorus", "eq", "reverb"],
+      "mix": {"volume": 0.68, "pan": -0.08, "send:A": 0.18, "send:B": 0.08},
+      "parameters": [{"match": "chorus", "value": 30.0}]
+    },
+    "lead": {
+      "instrument": "Drift",
+      "effects": ["delay", "reverb"],
+      "mix": {"volume": 0.62, "pan": 0.1, "send:A": 0.16, "send:B": 0.18},
+      "parameters": []
+    },
+    "pad": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "reverb", "utility"],
+      "mix": {"volume": 0.56, "pan": -0.12, "send:A": 0.22, "send:B": 0.1},
+      "parameters": []
+    },
+    "sample": {
+      "instrument": "Simpler",
+      "effects": ["filter", "eq", "delay"],
+      "mix": {"volume": 0.62, "pan": 0.0, "send:A": 0.12, "send:B": 0.12},
+      "parameters": []
+    }
+  }
+}

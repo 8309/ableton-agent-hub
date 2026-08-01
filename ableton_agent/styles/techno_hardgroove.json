@@ -1,0 +1,57 @@
+{
+  "name": "Hardgroove Techno",
+  "slug": "techno_hardgroove",
+  "role_keywords": [
+    {"role": "drums", "keywords": ["drum", "kick", "kit", "groove", "909"]},
+    {"role": "percussion", "keywords": ["perc", "conga", "bongo", "shaker", "ride", "hat"]},
+    {"role": "bass", "keywords": ["bass", "sub", "groove", "operator"]},
+    {"role": "chords", "keywords": ["chord", "stab", "keys", "funk"]},
+    {"role": "lead", "keywords": ["lead", "riff", "sequence", "seq", "synth"]},
+    {"role": "pad", "keywords": ["pad", "texture", "atmos"]},
+    {"role": "sample", "keywords": ["sample", "vocal", "loop", "simpler"]}
+  ],
+  "roles": {
+    "drums": {
+      "instrument": "Drum Rack",
+      "effects": ["drumbuss", "eq", "compressor"],
+      "mix": {"volume": 0.86, "pan": 0.0, "send:A": 0.06, "send:B": 0.02},
+      "parameters": [{"match": "drbuss transient", "value": 116.0}]
+    },
+    "percussion": {
+      "instrument": "Drum Rack",
+      "effects": ["eq", "delay", "reverb"],
+      "mix": {"volume": 0.7, "pan": 0.18, "send:A": 0.12, "send:B": 0.12},
+      "parameters": []
+    },
+    "bass": {
+      "instrument": "Operator",
+      "effects": ["filter", "saturator", "compressor"],
+      "mix": {"volume": 0.8, "pan": 0.0, "send:A": 0.0, "send:B": 0.0},
+      "parameters": [{"match": "filter frequency", "value": 0.46}]
+    },
+    "chords": {
+      "instrument": "Electric",
+      "effects": ["chorus", "delay", "eq"],
+      "mix": {"volume": 0.58, "pan": -0.08, "send:A": 0.12, "send:B": 0.14},
+      "parameters": []
+    },
+    "lead": {
+      "instrument": "Drift",
+      "effects": ["filter", "delay", "saturator"],
+      "mix": {"volume": 0.62, "pan": 0.08, "send:A": 0.08, "send:B": 0.16},
+      "parameters": []
+    },
+    "pad": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "reverb"],
+      "mix": {"volume": 0.42, "pan": -0.12, "send:A": 0.2, "send:B": 0.06},
+      "parameters": []
+    },
+    "sample": {
+      "instrument": "Simpler",
+      "effects": ["filter", "delay", "eq"],
+      "mix": {"volume": 0.58, "pan": 0.0, "send:A": 0.1, "send:B": 0.14},
+      "parameters": []
+    }
+  }
+}

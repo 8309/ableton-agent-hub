@@ -1,0 +1,57 @@
+{
+  "name": "Future Bass",
+  "slug": "future_bass",
+  "role_keywords": [
+    {"role": "drums", "keywords": ["drum", "kit", "kick", "snare", "clap"]},
+    {"role": "percussion", "keywords": ["hat", "perc", "top", "snap"]},
+    {"role": "bass", "keywords": ["bass", "sub", "operator"]},
+    {"role": "chords", "keywords": ["chord", "supersaw", "keys", "piano", "stab"]},
+    {"role": "lead", "keywords": ["lead", "pluck", "hook", "melody"]},
+    {"role": "pad", "keywords": ["pad", "wash", "texture"]},
+    {"role": "sample", "keywords": ["sample", "vocal", "chop", "simpler"]}
+  ],
+  "roles": {
+    "drums": {
+      "instrument": "Drum Rack",
+      "effects": ["drumbuss", "eq", "compressor"],
+      "mix": {"volume": 0.82, "pan": 0.0, "send:A": 0.08, "send:B": 0.04},
+      "parameters": [{"match": "drbuss amount", "value": 12.0}]
+    },
+    "percussion": {
+      "instrument": "Drum Rack",
+      "effects": ["eq", "reverb"],
+      "mix": {"volume": 0.62, "pan": 0.16, "send:A": 0.12, "send:B": 0.06},
+      "parameters": []
+    },
+    "bass": {
+      "instrument": "Operator",
+      "effects": ["saturator", "filter", "compressor"],
+      "mix": {"volume": 0.78, "pan": 0.0, "send:A": 0.02, "send:B": 0.0},
+      "parameters": [{"match": "filter freq", "value": 0.48}]
+    },
+    "chords": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "chorus", "reverb"],
+      "mix": {"volume": 0.7, "pan": -0.06, "send:A": 0.22, "send:B": 0.08},
+      "parameters": []
+    },
+    "lead": {
+      "instrument": "Drift",
+      "effects": ["delay", "reverb", "filter"],
+      "mix": {"volume": 0.64, "pan": 0.08, "send:A": 0.2, "send:B": 0.16},
+      "parameters": []
+    },
+    "pad": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "reverb", "utility"],
+      "mix": {"volume": 0.54, "pan": -0.12, "send:A": 0.28, "send:B": 0.08},
+      "parameters": []
+    },
+    "sample": {
+      "instrument": "Simpler",
+      "effects": ["filter", "reverb", "delay"],
+      "mix": {"volume": 0.62, "pan": 0.0, "send:A": 0.18, "send:B": 0.12},
+      "parameters": []
+    }
+  }
+}

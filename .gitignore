@@ -1,0 +1,37 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+.venv/
+venv/
+.env
+.env.*
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Machine-specific discovery output.
+ableton_agent/sample_index/local_sample_index.json
+ableton_agent/sample_index/*_shortlist.json
+ableton_agent/sound_catalog/local_sound_catalog.json
+ableton_agent/sound_catalog/local_sound_catalog_summary.md
+
+# Creative projects and generated media do not belong in the public tool repo.
+projects/
+experiments/
+*.als
+*.asd
+*.wav
+*.aif
+*.aiff
+*.flac
+
+# Local release staging.
+release/
+*.zip
+SHA256SUMS.txt

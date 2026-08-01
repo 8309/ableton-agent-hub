@@ -1,0 +1,57 @@
+{
+  "name": "Industrial Techno",
+  "slug": "techno_industrial",
+  "role_keywords": [
+    {"role": "drums", "keywords": ["drum", "kick", "kit", "distorted", "industrial"]},
+    {"role": "percussion", "keywords": ["perc", "metal", "clank", "hit", "noise"]},
+    {"role": "bass", "keywords": ["bass", "sub", "rumble", "operator"]},
+    {"role": "chords", "keywords": ["chord", "stab", "dark", "keys"]},
+    {"role": "lead", "keywords": ["lead", "scream", "sequence", "seq", "synth"]},
+    {"role": "pad", "keywords": ["pad", "drone", "atmos", "texture"]},
+    {"role": "sample", "keywords": ["sample", "noise", "vox", "machine", "simpler"]}
+  ],
+  "roles": {
+    "drums": {
+      "instrument": "Drum Rack",
+      "effects": ["drumbuss", "saturator", "eq"],
+      "mix": {"volume": 0.88, "pan": 0.0, "send:A": 0.04, "send:B": 0.02},
+      "parameters": [{"match": "drbuss drive", "value": 28.0}]
+    },
+    "percussion": {
+      "instrument": "Drum Rack",
+      "effects": ["saturator", "redux", "delay"],
+      "mix": {"volume": 0.62, "pan": 0.14, "send:A": 0.08, "send:B": 0.18},
+      "parameters": []
+    },
+    "bass": {
+      "instrument": "Operator",
+      "effects": ["saturator", "overdrive", "filter"],
+      "mix": {"volume": 0.84, "pan": 0.0, "send:A": 0.0, "send:B": 0.02},
+      "parameters": [{"match": "filter freq", "value": 0.36}]
+    },
+    "chords": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "saturator", "reverb"],
+      "mix": {"volume": 0.5, "pan": -0.08, "send:A": 0.12, "send:B": 0.12},
+      "parameters": []
+    },
+    "lead": {
+      "instrument": "Drift",
+      "effects": ["filter", "overdrive", "delay"],
+      "mix": {"volume": 0.66, "pan": 0.08, "send:A": 0.08, "send:B": 0.18},
+      "parameters": []
+    },
+    "pad": {
+      "instrument": "Wavetable",
+      "effects": ["filter", "reverb", "redux"],
+      "mix": {"volume": 0.42, "pan": -0.12, "send:A": 0.24, "send:B": 0.08},
+      "parameters": []
+    },
+    "sample": {
+      "instrument": "Simpler",
+      "effects": ["filter", "redux", "saturator"],
+      "mix": {"volume": 0.56, "pan": 0.0, "send:A": 0.08, "send:B": 0.16},
+      "parameters": []
+    }
+  }
+}
