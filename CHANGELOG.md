@@ -5,9 +5,9 @@ follows Keep a Changelog, and version numbers follow semantic versioning.
 
 ## [Unreleased]
 
-## [0.1.0-alpha] - Unreleased
+## [0.1.0-alpha] - 2026-08-01
 
-This version is a release candidate and has not been tagged or published yet.
+This is the first public alpha release of Ableton Agent Hub.
 
 ### Added
 
