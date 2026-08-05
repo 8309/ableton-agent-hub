@@ -32,8 +32,8 @@ This record covers the public export sourced from private development checkpoint
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `ableton_agent_hub-0.2.0a0-py3-none-any.whl` | `6792c431564cf9f8f5ea1f797413d01f184a8bab30f1007fceb64ced8e859eec` |
-| `ableton_agent_hub-0.2.0a0.tar.gz` | `22561db74d63b08a2b2d929cf68f597ed645c6dc529282c54f048b7dd18c6efb` |
+| `ableton_agent_hub-0.2.0a0-py3-none-any.whl` | `2c79d039bd8340e9771847312c10c02a142f0694c94502e776aebbb0a65b8ae4` |
+| `ableton_agent_hub-0.2.0a0.tar.gz` | `4e7beace85322bbe7c210c25076acda431f26a66cf076a3bbca3ee29aca44c8c` |
 
 The artifacts are rebuilt from the frozen release tree before the tag is
 created; the hashes above are replaced if the final build changes them.

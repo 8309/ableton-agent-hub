@@ -42,9 +42,9 @@ installation and validation workflow.
 - Hub package resources were rebuilt and synchronized.
 - Installed-wheel smoke test passed against a running Live Set.
 - Wheel SHA-256:
-  `6792c431564cf9f8f5ea1f797413d01f184a8bab30f1007fceb64ced8e859eec`
+  `2c79d039bd8340e9771847312c10c02a142f0694c94502e776aebbb0a65b8ae4`
 - Source archive SHA-256:
-  `22561db74d63b08a2b2d929cf68f597ed645c6dc529282c54f048b7dd18c6efb`
+  `4e7beace85322bbe7c210c25076acda431f26a66cf076a3bbca3ee29aca44c8c`
 
 This remains an early alpha. Mutating commands default to dry-run, and manual
 review is recommended before committing changes to a Live Set.
