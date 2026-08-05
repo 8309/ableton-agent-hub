@@ -15,6 +15,11 @@ Set and review every resolved target.
 - Controls tempo, transport, mixer values, selected device parameters, clips,
   scenes, locators, routing, and a whitelist of native devices.
 - Uses bounded, sequential reads for larger parameter and track collections.
+- Runs one progressive first read that exposes a quick Set map, then reuses the
+  same metadata for bounded MIDI-note and mixer depth.
+- Builds a machine-local SQLite sound catalog for searching Packs, presets,
+  samples, Live Clips, MIDI files, and installed plugins without publishing the
+  user's catalog data.
 - Preserves Live's exact internal parameter values and can request the visible
   UI value when Live exposes a safe formatter.
 - Helps select local samples and confirms manually loaded Simpler or Drum Rack
@@ -65,6 +70,20 @@ Read and preview tempo changes:
 .\.venv\Scripts\ableton-agent.exe tempo --bpm 132
 .\.venv\Scripts\ableton-agent.exe tempo --bpm 132 --commit
 ```
+
+Run the standard read-only first scan of the currently open Set:
+
+```powershell
+.\.venv\Scripts\ableton-agent.exe initial-read
+```
+
+This writes a quick checkpoint first, then completes MIDI-note and mixer depth
+without rescanning the track and clip collections. Use `--depth quick` for an
+explicitly metadata-only refresh.
+
+Coding-agent users should also add the recommended workflow rules from
+[Agent Setup](docs/agent_setup.md) to their project-level `AGENTS.md`. The
+project never overwrites an existing instructions file.
 
 The second command is a dry-run. Only the third command writes Live's global
 tempo. Arrangement tempo automation is not editable through this Hub and can

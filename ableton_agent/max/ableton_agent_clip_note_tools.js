@@ -2,8 +2,10 @@ autowatch = 1;
 inlets = 1;
 outlets = 1;
 
+include("ableton_agent_read_core.js");
 
 var MAX_DETAIL_NOTES = 4096;
+var MAX_CLIP_METADATA = 512;
 
 
 function list() {
@@ -144,6 +146,32 @@ function readClipNotes(clipId, fallbackLength) {
 }
 
 
+function readClipNotesWindow(clipId, fallbackLength, startBeat, lengthBeats) {
+    var clip = new LiveAPI(function () {}, "id " + clipId);
+    var isMidi = Boolean(Number(valueOf(clip.get("is_midi_clip"), 0)));
+    var name = String(valueOf(clip.get("name"), ""));
+    var length = Number(valueOf(safeGet(clip, "length", fallbackLength || 0.0), fallbackLength || 0.0));
+    if (!isMidi) {
+        throw new Error("Target clip is not a MIDI clip: " + name);
+    }
+    var start = Math.max(0, Number(startBeat || 0));
+    var windowLength = Math.max(0.0001, Number(lengthBeats || Math.max(length, 1.0)));
+    var raw = clip.call("get_notes_extended", 0, 128, start, windowLength);
+    var notes = parseNotes(raw);
+    if (notes.length > MAX_DETAIL_NOTES) {
+        throw new Error("Too many notes in current clip window; maximum is " + MAX_DETAIL_NOTES);
+    }
+    notes.sort(function (left, right) {
+        var startDelta = noteNumber(left, "start_time", 0.0) - noteNumber(right, "start_time", 0.0);
+        if (startDelta !== 0) {
+            return startDelta;
+        }
+        return noteNumber(left, "pitch", 0) - noteNumber(right, "pitch", 0);
+    });
+    return {api: clip, id: clipId, name: name, length: length, notes: notes};
+}
+
+
 function clipLength(clip) {
     var length = Number(valueOf(safeGet(clip, "length", 0.0), 0.0));
     if (length > 0) {
@@ -169,6 +197,34 @@ function clipSummary(clipId, source, trackIndex, trackName, extra) {
         detail.target[key] = extra[key];
     }
     return detail;
+}
+
+
+function clipMetadata(clipId, source, trackIndex, trackId, trackName, extra) {
+    var clip = new LiveAPI(function () {}, "id " + clipId);
+    var isMidi = Boolean(Number(valueOf(safeGet(clip, "is_midi_clip", 0), 0)));
+    var isAudio = Boolean(Number(valueOf(safeGet(clip, "is_audio_clip", 0), 0)));
+    var start = Number(valueOf(safeGet(clip, "start_time", safeGet(clip, "start_marker", 0.0)), 0.0));
+    var length = clipLength(clip);
+    var end = Number(valueOf(safeGet(clip, "end_time", start + length), start + length));
+    var record = {
+        source: source,
+        track_index: trackIndex,
+        track_id: trackId,
+        track_name: trackName,
+        clip_id: clipId,
+        clip_name: String(valueOf(safeGet(clip, "name", ""), "")),
+        clip_type: isMidi ? "midi" : (isAudio ? "audio" : "unknown"),
+        is_midi_clip: isMidi,
+        is_audio_clip: isAudio,
+        start_time: start,
+        end_time: end,
+        length: length
+    };
+    for (var key in extra || {}) {
+        record[key] = extra[key];
+    }
+    return record;
 }
 
 
@@ -265,6 +321,35 @@ function collectArrangementMidiClips(song, targetTrack, candidates, limit) {
 }
 
 
+function collectArrangementClipMetadata(song, targetTrack, references, tokenIds, limit) {
+    var trackIds = idsFrom(song.get("tracks"));
+    for (var trackIndex = 0; trackIndex < trackIds.length; trackIndex += 1) {
+        if (references.length >= limit) {
+            break;
+        }
+        var track = new LiveAPI(function () {}, "id " + trackIds[trackIndex]);
+        var trackName = String(valueOf(track.get("name"), ""));
+        if (targetTrack && trackIndex !== targetTrack.index) {
+            continue;
+        }
+        var clipIds = idsFrom(safeGet(track, "arrangement_clips", []));
+        for (var clipIndex = 0; clipIndex < clipIds.length; clipIndex += 1) {
+            if (references.length >= limit) {
+                break;
+            }
+            references.push({
+                clip_id: clipIds[clipIndex],
+                source: "arrangement",
+                track_index: trackIndex,
+                track_id: trackIds[trackIndex],
+                track_name: trackName
+            });
+            tokenIds.push(clipIds[clipIndex]);
+        }
+    }
+}
+
+
 function collectSessionMidiClips(song, targetTrack, candidates, limit) {
     var trackIds = idsFrom(song.get("tracks"));
     var sceneIds = idsFrom(song.get("scenes"));
@@ -297,6 +382,212 @@ function collectSessionMidiClips(song, targetTrack, candidates, limit) {
             candidates.push(detail);
         }
     }
+}
+
+
+function collectSessionClipMetadata(song, targetTrack, references, tokenIds, limit) {
+    var trackIds = idsFrom(song.get("tracks"));
+    var sceneIds = idsFrom(song.get("scenes"));
+    for (var trackIndex = 0; trackIndex < trackIds.length; trackIndex += 1) {
+        if (references.length >= limit) {
+            break;
+        }
+        var track = new LiveAPI(function () {}, "id " + trackIds[trackIndex]);
+        var trackName = String(valueOf(track.get("name"), ""));
+        if (targetTrack && trackIndex !== targetTrack.index) {
+            continue;
+        }
+        for (var sceneIndex = 0; sceneIndex < sceneIds.length; sceneIndex += 1) {
+            if (references.length >= limit) {
+                break;
+            }
+            var slot = new LiveAPI(function () {}, "live_set tracks " + trackIndex + " clip_slots " + sceneIndex);
+            if (!Boolean(Number(valueOf(safeGet(slot, "has_clip", 0), 0)))) {
+                continue;
+            }
+            var clipId = idFrom(slot.get("clip"));
+            if (!clipId) {
+                continue;
+            }
+            references.push({
+                clip_id: clipId,
+                source: "session",
+                track_index: trackIndex,
+                track_id: trackIds[trackIndex],
+                track_name: trackName,
+                scene_index: sceneIndex
+            });
+            tokenIds.push(clipId);
+        }
+    }
+}
+
+
+function boundedClipMetadataRecord(reference, read) {
+    var extra = {};
+    if (reference.scene_index !== undefined) {
+        extra.scene_index = reference.scene_index;
+    }
+    var record = clipMetadata(
+        reference.clip_id,
+        reference.source,
+        reference.track_index,
+        reference.track_id,
+        reference.track_name,
+        extra
+    );
+    var out = {};
+    if (AbletonAgentReadCore.has(read, "identity")) {
+        out.source = record.source;
+        out.track_index = record.track_index;
+        out.track_id = record.track_id;
+        out.track_name = record.track_name;
+        out.clip_id = record.clip_id;
+        out.clip_name = record.clip_name;
+        if (record.scene_index !== undefined) {
+            out.scene_index = record.scene_index;
+        }
+    }
+    if (AbletonAgentReadCore.has(read, "timing")) {
+        out.start_time = record.start_time;
+        out.end_time = record.end_time;
+        out.length = record.length;
+    }
+    if (AbletonAgentReadCore.has(read, "type")) {
+        out.clip_type = record.clip_type;
+        out.is_midi_clip = record.is_midi_clip;
+        out.is_audio_clip = record.is_audio_clip;
+    }
+    return out;
+}
+
+
+function clipMetadataCollection(payload) {
+    var song = new LiveAPI(function () {}, "live_set");
+    var targetMode = String(payload.target || "arrangement");
+    var trackSelector = payload.track_index !== undefined ? payload.track_index : payload.track;
+    if (trackSelector === undefined || trackSelector === null || trackSelector === "") {
+        trackSelector = payload.track_name;
+    }
+    var targetTrack = resolveTrackByNameOrIndex(song, trackSelector);
+    var references = [];
+    var tokenIds = [];
+    if (targetMode === "arrangement" || targetMode === "auto") {
+        collectArrangementClipMetadata(song, targetTrack, references, tokenIds, MAX_CLIP_METADATA);
+    }
+    if (targetMode === "session" || targetMode === "auto") {
+        collectSessionClipMetadata(song, targetTrack, references, tokenIds, MAX_CLIP_METADATA);
+    }
+    return {references: references, token_ids: tokenIds};
+}
+
+
+function scanClipMetadataBounded(payload) {
+    var read = AbletonAgentReadCore.parse(payload, {
+        max_limit: 64,
+        max_cursor: MAX_CLIP_METADATA,
+        allowed_projection: ["identity", "timing", "type"],
+        default_projection: ["identity", "timing", "type"]
+    });
+    var collection = clipMetadataCollection(payload);
+    var token = AbletonAgentReadCore.collectionToken(collection.token_ids);
+    AbletonAgentReadCore.verifyCollection(read, token);
+    if (read.cursor > collection.references.length) {
+        throw new Error("read.cursor is outside the clip metadata collection");
+    }
+    var items = [];
+    var scanned = 0;
+    var partial = false;
+    while (read.cursor + scanned < collection.references.length && scanned < read.limit) {
+        if (scanned > 0 && AbletonAgentReadCore.budgetExceeded(read)) {
+            partial = true;
+            break;
+        }
+        items.push(boundedClipMetadataRecord(collection.references[read.cursor + scanned], read));
+        scanned += 1;
+    }
+    var nextCursor = read.cursor + scanned;
+    return {
+        ok: true,
+        dry_run: true,
+        applied: false,
+        action: "scan_clips_metadata",
+        total_item_count: collection.references.length,
+        items: items,
+        read: AbletonAgentReadCore.metadata(read, {
+            next_cursor: nextCursor,
+            scanned_count: scanned,
+            returned_count: items.length,
+            has_more: nextCursor < collection.references.length,
+            partial: partial,
+            collection_token: token,
+            warnings: []
+        }),
+        message: "Clip metadata scanned without reading note bodies"
+    };
+}
+
+
+function readNotesByClipIdBounded(payload) {
+    if (payload.clip_id === undefined || payload.clip_id === null) {
+        throw new Error("clip_id is required for read_notes_by_clip_id");
+    }
+    var clipId = Number(payload.clip_id);
+    if (!isFinite(clipId) || Math.floor(clipId) !== clipId || clipId <= 0) {
+        throw new Error("clip_id must be a positive Live clip id");
+    }
+    var read = AbletonAgentReadCore.parse(payload, {
+        max_limit: 64,
+        max_cursor: 1000000,
+        allowed_projection: ["notes"],
+        default_projection: ["notes"],
+        default_limit: 8
+    });
+    var clip = new LiveAPI(function () {}, "id " + clipId);
+    var length = clipLength(clip);
+    var token = AbletonAgentReadCore.collectionToken([clipId, Math.round(length * 10000)]);
+    AbletonAgentReadCore.verifyCollection(read, token);
+    if (read.cursor > Math.ceil(length)) {
+        throw new Error("read.cursor is outside the clip note time range");
+    }
+    var windowEnd = Math.min(length, read.cursor + read.limit);
+    var detail = readClipNotesWindow(clipId, length, read.cursor, Math.max(windowEnd - read.cursor, 0.0001));
+    var notes = [];
+    var selected = 0;
+    for (var index = 0; index < detail.notes.length; index += 1) {
+        if (selectedByRange(detail.notes[index], payload)) {
+            notes.push(noteSummary(detail.notes[index]));
+            selected += 1;
+        }
+    }
+    var nextCursor = windowEnd >= length ? Math.ceil(length) : Math.ceil(windowEnd);
+    return {
+        ok: true,
+        dry_run: true,
+        applied: false,
+        action: "read_notes_by_clip_id",
+        target: {
+            source: "direct_clip_id",
+            clip_id: clipId,
+            clip_name: detail.name
+        },
+        clip_name: detail.name,
+        length: length,
+        window_start: read.cursor,
+        window_end: windowEnd,
+        selected_count: selected,
+        notes: notes,
+        read: AbletonAgentReadCore.metadata(read, {
+            next_cursor: nextCursor,
+            scanned_count: 1,
+            returned_count: notes.length,
+            has_more: windowEnd < length,
+            partial: false,
+            collection_token: token,
+            warnings: []
+        }),
+        message: "Target MIDI clip notes read directly by clip_id"
+    };
 }
 
 
@@ -462,9 +753,9 @@ function handleClipNoteTools(requestId, payloadText, mode) {
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
         var action = String(payload.action || "read_notes");
-        var allowed = ["scan_clips", "read_notes", "shift_notes", "quantize_notes", "delete_notes_in_range", "scale_velocity"];
+        var allowed = ["scan_clips", "scan_clips_metadata", "read_notes", "read_notes_by_clip_id", "shift_notes", "quantize_notes", "delete_notes_in_range", "scale_velocity"];
         if (allowed.indexOf(action) < 0) {
-            throw new Error("action must be scan_clips, read_notes, shift_notes, quantize_notes, delete_notes_in_range, or scale_velocity");
+            throw new Error("action must be scan_clips, scan_clips_metadata, read_notes, read_notes_by_clip_id, shift_notes, quantize_notes, delete_notes_in_range, or scale_velocity");
         }
 
         if (action === "scan_clips") {
@@ -481,6 +772,16 @@ function handleClipNoteTools(requestId, payloadText, mode) {
                     ? "MIDI clip candidates scanned; choose candidate_index before reading or editing"
                     : "No readable MIDI clip candidates found"
             })]);
+            return;
+        }
+
+        if (action === "scan_clips_metadata") {
+            outlet(0, [requestId, JSON.stringify(scanClipMetadataBounded(payload))]);
+            return;
+        }
+
+        if (action === "read_notes_by_clip_id") {
+            outlet(0, [requestId, JSON.stringify(readNotesByClipIdBounded(payload))]);
             return;
         }
 

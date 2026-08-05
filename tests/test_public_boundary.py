@@ -30,6 +30,8 @@ class PublicBoundaryTest(unittest.TestCase):
             "ableton_agent/sample_index/local_sample_index.json",
             "ableton_agent/sound_catalog/local_sound_catalog.json",
             "ableton_agent/sound_catalog/local_sound_catalog_summary.md",
+            "ableton_agent/sound_catalog/local_sound_catalog.sqlite3",
+            "ableton_agent/runtime",
         )
         self.assertEqual([], [path for path in forbidden if (ROOT / path).exists()])
 

@@ -138,6 +138,32 @@ class PingClientTest(unittest.TestCase):
         self.assertEqual(result["from"], "127.0.0.1")
         self.assertEqual(result["port"], 7400)
 
+    def test_ping_timeout_names_the_supported_hub(self) -> None:
+        from ableton_bridge.ping import PingTimeoutError, ping
+
+        class FakeSocket:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def setsockopt(self, *_args):
+                return None
+
+            def bind(self, *_args):
+                return None
+
+            def settimeout(self, *_args):
+                return None
+
+            def sendto(self, *_args):
+                return None
+
+        with patch("ableton_bridge.ping.socket.socket", side_effect=lambda *_args: FakeSocket()):
+            with self.assertRaisesRegex(PingTimeoutError, "Ableton Agent Hub.amxd"):
+                ping(timeout=0.0)
+
 
 class NotesClientTest(unittest.TestCase):
     def test_send_note_correlates_note_ack(self) -> None:
@@ -455,6 +481,93 @@ class ClipNoteToolsClientTest(unittest.TestCase):
 
         self.assertEqual(result["action"], "scan_clips")
         self.assertEqual(result["candidate_count"], 2)
+
+    def test_clip_note_tools_bounded_collects_metadata_pages(self) -> None:
+        from ableton_bridge.clip_note_tools import clip_note_tools_bounded
+        from ableton_bridge.osc import decode_message, encode_message
+
+        class FakeSocket:
+            replies = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def setsockopt(self, *_args):
+                return None
+
+            def bind(self, *_args):
+                return None
+
+            def settimeout(self, *_args):
+                return None
+
+            def sendto(self, packet, _address):
+                path, args = decode_message(packet)
+                if path != "/clip_note_tools" or args[2] != "dry_run":
+                    raise AssertionError((path, args))
+                payload = json.loads(args[1])
+                if payload["action"] != "scan_clips_metadata":
+                    raise AssertionError(payload)
+                cursor = payload["read"]["cursor"]
+                if cursor == 0:
+                    body = {
+                        "ok": True,
+                        "action": "scan_clips_metadata",
+                        "items": [{"clip_id": 101}],
+                        "read": {
+                            "cursor": 0,
+                            "next_cursor": 1,
+                            "limit": 1,
+                            "scanned_count": 1,
+                            "returned_count": 1,
+                            "has_more": True,
+                            "partial": False,
+                            "collection_token": "fnv1a-test-2",
+                        },
+                    }
+                elif cursor == 1:
+                    if payload["read"].get("expected_collection_token") != "fnv1a-test-2":
+                        raise AssertionError(payload)
+                    body = {
+                        "ok": True,
+                        "action": "scan_clips_metadata",
+                        "items": [{"clip_id": 102}],
+                        "read": {
+                            "cursor": 1,
+                            "next_cursor": 2,
+                            "limit": 1,
+                            "scanned_count": 1,
+                            "returned_count": 1,
+                            "has_more": False,
+                            "partial": False,
+                            "collection_token": "fnv1a-test-2",
+                        },
+                    }
+                else:
+                    raise AssertionError(payload)
+                FakeSocket.replies.append(encode_message("/clip_note_tools", [args[0], json.dumps(body)]))
+
+            def recvfrom(self, _size):
+                if not FakeSocket.replies:
+                    raise socket.timeout()
+                return FakeSocket.replies.pop(0), ("127.0.0.1", 7400)
+
+        with patch("ableton_bridge.bounded_read.socket.socket", side_effect=lambda *_args: FakeSocket()):
+            result = clip_note_tools_bounded(
+                "scan_clips_metadata",
+                limit=1,
+                max_pages=4,
+                max_items=8,
+                total_timeout=2.0,
+                timeout=1.0,
+            )
+
+        self.assertTrue(result["complete"])
+        self.assertEqual(result["returned_count"], 2)
+        self.assertEqual([item["clip_id"] for item in result["items"]], [101, 102])
 
 
 class ClipVariationClientTest(unittest.TestCase):
@@ -4300,12 +4413,15 @@ class DevicePackageTest(unittest.TestCase):
         self.assertIn('song.call("continue_playing");', source)
         self.assertNotIn('song.call("jump_by"', source)
 
-    def test_clip_note_tools_scans_before_targeting_a_midi_clip(self) -> None:
+    def test_clip_note_tools_keeps_legacy_scan_and_adds_direct_bounded_reads(self) -> None:
         source = (ROOT / "ableton_agent" / "max" / "ableton_agent_clip_note_tools.js").read_text()
 
-        self.assertIn('var allowed = ["scan_clips", "read_notes"', source)
+        self.assertIn('include("ableton_agent_read_core.js")', source)
+        self.assertIn('var allowed = ["scan_clips", "scan_clips_metadata", "read_notes", "read_notes_by_clip_id"', source)
         self.assertIn("function scanMidiClips(payload)", source)
         self.assertIn("function resolveTargetClip(payload)", source)
+        self.assertIn("function scanClipMetadataBounded(payload)", source)
+        self.assertIn("function readNotesByClipIdBounded(payload)", source)
         self.assertIn("collectArrangementMidiClips(song, targetTrack, candidates, limit)", source)
         self.assertIn("collectSessionMidiClips(song, targetTrack, candidates, limit)", source)
         self.assertIn("Run scan_clips first, then pass candidate_index", source)
@@ -4477,6 +4593,58 @@ class DevicePackageTest(unittest.TestCase):
 
 
 class SoundCatalogTest(unittest.TestCase):
+    def test_reads_aifc_header_and_infers_filename_metadata(self) -> None:
+        import struct
+
+        from ableton_bridge.sound_catalog_analysis import (
+            infer_filename_metadata,
+            read_audio_header,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "Buried Landscapes 130bpm Dm.aif"
+            comm = (
+                struct.pack(">hIh", 2, 44100, 24)
+                + bytes.fromhex("400eac44000000000000")
+                + b"able"
+            )
+            payload = b"AIFC" + b"COMM" + struct.pack(">I", len(comm)) + comm
+            source.write_bytes(b"FORM" + struct.pack(">I", len(payload)) + payload)
+            header = read_audio_header(source)
+
+        inferred = infer_filename_metadata(
+            source.stem, "Samples/Loops/Buried Landscapes 130bpm Dm.aif"
+        )
+        self.assertEqual(header["sample_rate"], 44100)
+        self.assertEqual(header["channels"], 2)
+        self.assertEqual(header["bit_depth"], 24)
+        self.assertEqual(header["encoding"], "able")
+        self.assertAlmostEqual(header["duration_seconds"], 1.0)
+        self.assertEqual(inferred["estimated_bpm"], 130.0)
+        self.assertEqual(inferred["estimated_key"], "D minor")
+        self.assertTrue(inferred["is_loop"])
+
+    def test_parses_gzipped_ableton_preset_devices_macros_and_references(self) -> None:
+        import gzip
+
+        from ableton_bridge.sound_catalog_analysis import parse_ableton_preset
+
+        xml = b"""<Ableton Creator="Ableton Live Test"><GroupDevicePreset><Device>
+<InstrumentGroupDevice><LomId/><On/><MacroDisplayNames.0 Value="Tone"/>
+<Simpler><LomId/><On/><FileRef><RelativePath Value="../Samples/Kick C2.wav"/>
+<LivePackId Value="pack-test"/><LivePackName Value="Test Pack"/></FileRef></Simpler>
+</InstrumentGroupDevice></Device></GroupDevicePreset></Ableton>"""
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "Test.adg"
+            source.write_bytes(gzip.compress(xml))
+            parsed = parse_ableton_preset(source)
+
+        self.assertEqual(parsed["parse_status"], "ok")
+        self.assertEqual(parsed["rack_type"], "InstrumentGroupDevice")
+        self.assertEqual(parsed["primary_device"], "Simpler")
+        self.assertEqual(parsed["macro_names"][0]["name"], "Tone")
+        self.assertEqual(parsed["references"][0]["live_pack_id"], "pack-test")
+
     def test_scans_packs_plugins_and_searches_roles(self) -> None:
         from ableton_bridge.sound_catalog import scan_sound_catalog, search_catalog
 
@@ -4489,32 +4657,247 @@ class SoundCatalogTest(unittest.TestCase):
             plugins.mkdir()
             (lost / "Deep Bass.adg").write_bytes(b"preset")
             (lost / "Air Texture.wav").write_bytes(b"audio")
+            (lost / "Bass Groove.alc").write_bytes(b"clip")
             (plugins / "Serum.vst3").write_bytes(b"plugin")
 
             catalog = scan_sound_catalog([packs, plugins], output_path=None, summary_path=None)
 
         self.assertEqual(catalog["summary"]["pack_count"], 1)
+        self.assertEqual(catalog["schema_version"], 2)
         self.assertEqual(catalog["summary"]["kind_counts"]["plugin"], 1)
         self.assertEqual(catalog["summary"]["kind_counts"]["ableton_preset"], 1)
-        bass = search_catalog(catalog, role="bass", pack="Lost and Found")
+        self.assertEqual(catalog["summary"]["kind_counts"]["live_clip"], 1)
+        clip = search_catalog(catalog, kind="live_clip")
+        self.assertEqual(clip[0]["agent_control"], "manual_load_only")
+        bass = search_catalog(
+            catalog, role="bass", pack="Lost and Found", kind="ableton_preset"
+        )
         self.assertEqual(bass[0]["name"], "Deep Bass")
         self.assertFalse(bass[0]["auto_insert"])
         plugins_found = search_catalog(catalog, kind="plugin")
         self.assertEqual(plugins_found[0]["name"], "Serum")
         self.assertEqual(plugins_found[0]["agent_control"], "control_after_load")
+        self.assertEqual(catalog["packs"][0]["disk_file_count"], 3)
+        self.assertEqual(catalog["packs"][0]["disk_size_bytes"], 15)
+        self.assertEqual(catalog["packs"][0]["preset_examples"], ["Deep Bass"])
 
     def test_summary_is_compact_and_lists_packs_and_plugins(self) -> None:
         from ableton_bridge.sound_catalog import render_summary
 
-        summary = render_summary({
-            "generated_at": "2026-07-21T00:00:00",
-            "summary": {"pack_count": 1, "resource_count": 2, "kind_counts": {"plugin": 1}, "role_counts": {}},
-            "packs": [{"name": "Lost and Found", "resource_count": 1, "roles": ["pad"]}],
-            "resources": [{"name": "Serum", "kind": "plugin", "load_mode": "manual_load", "agent_control": "control_after_load"}],
-        })
+        summary = render_summary(
+            {
+                "generated_at": "2026-07-21T00:00:00",
+                "summary": {"pack_count": 1, "resource_count": 2, "kind_counts": {"plugin": 1}, "role_counts": {}},
+                "roots": [{"path": "C:/Factory Packs", "exists": True, "resource_count": 1}],
+                "packs": [{
+                    "name": "Lost and Found", "path": "C:/Factory Packs/Lost and Found",
+                    "resource_count": 1, "roles": ["pad"], "role_counts": {"pad": 1},
+                    "kind_counts": {"ableton_preset": 1}, "disk_file_count": 1,
+                    "disk_size_bytes": 1024, "top_level_directories": ["Sounds"],
+                    "preset_examples": ["Air Pad"], "sample_examples": [],
+                }],
+                "resources": [{"name": "Serum", "kind": "plugin", "load_mode": "manual_load", "agent_control": "control_after_load"}],
+            },
+            {
+                "database_path": "C:/catalog.sqlite3", "registered_packs": 1,
+                "counts": {"resources": 2, "tags": 3, "resource_tags": 4},
+                "official_tagged_resources": 1, "unmatched_xmp_items": 0,
+                "library_creator": "Ableton Live Test",
+            },
+        )
         self.assertIn("Lost and Found", summary)
         self.assertIn("Serum", summary)
+        self.assertIn("Pack Details", summary)
+        self.assertIn("Agent Database", summary)
+        self.assertIn("Resources with official Ableton XMP tags: 1", summary)
+        self.assertIn("1.0 KB", summary)
+        self.assertIn("Update Workflow", summary)
+        self.assertIn("Role counts are filename/path heuristics", summary)
         self.assertIn("Discovery does not grant automatic insertion", summary)
+
+    def test_builds_sqlite_index_with_registered_pack_xmp_tags_and_fts(self) -> None:
+        from ableton_bridge.sound_catalog import scan_sound_catalog
+        from ableton_bridge.sound_catalog_db import (
+            build_catalog_database,
+            database_stats,
+            search_database,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            packs = root / "Factory Packs"
+            pack = packs / "Test Pack"
+            sample = pack / "Samples" / "Deep Bass 128bpm C2.wav"
+            sample.parent.mkdir(parents=True)
+            import wave
+            with wave.open(str(sample), "wb") as handle:
+                handle.setnchannels(1)
+                handle.setsampwidth(2)
+                handle.setframerate(48000)
+                handle.writeframes(b"\x00\x00" * 48000)
+            info = pack / "Ableton Folder Info"
+            info.mkdir()
+            (info / "tags.xmp").write_text(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description xmlns:ablFR="https://ns.ableton.com/xmp/fs-resources/1.0/">
+      <ablFR:packUniqueId>www.ableton.com/test</ablFR:packUniqueId>
+      <ablFR:packVersion>1.2.3</ablFR:packVersion>
+      <ablFR:platform>win</ablFR:platform>
+      <ablFR:items><rdf:Bag>
+      <rdf:li rdf:parseType="Resource">
+        <ablFR:filePath>Samples</ablFR:filePath>
+        <ablFR:keywords><rdf:Bag>
+          <rdf:li>Devices|Sampler</rdf:li>
+        </rdf:Bag></ablFR:keywords>
+      </rdf:li>
+      <rdf:li rdf:parseType="Resource">
+        <ablFR:filePath>Samples/Deep Bass 128bpm C2.wav</ablFR:filePath>
+        <ablFR:keywords><rdf:Bag>
+          <rdf:li>Sounds|Bass|Synth Bass</rdf:li>
+          <rdf:li>Key|D♯</rdf:li>
+        </rdf:Bag></ablFR:keywords>
+      </rdf:li></rdf:Bag></ablFR:items>
+    </rdf:Description>
+  </rdf:RDF>
+</x:xmpmeta>
+""",
+                encoding="utf-8",
+            )
+            library = root / "Library.cfg"
+            library.write_text(
+                f"""<?xml version="1.0" encoding="UTF-8"?>
+<Ableton Creator="Ableton Live Test">
+  <ContentLibrary><SliceInfoList>
+    <LibrarySliceInfo Id="1" Path="{pack}" DisplayName="Test Pack" UniqueId="www.ableton.com/test" />
+  </SliceInfoList></ContentLibrary>
+</Ableton>
+""",
+                encoding="utf-8",
+            )
+            database = root / "catalog.sqlite3"
+            catalog = scan_sound_catalog([packs], output_path=None, summary_path=None)
+            built = build_catalog_database(
+                catalog,
+                database_path=database,
+                library_config_path=library,
+            )
+            first = search_database(
+                database,
+                query="Deep Bass",
+                pack="Test Pack",
+                kind="audio_sample",
+                official_tag="Synth Bass",
+                bpm_min=127,
+                bpm_max=129,
+                root_note="C2",
+                is_loop=True,
+            )
+            first_id = first[0]["id"]
+            natural_d = search_database(database, official_tag="Key|D")
+            sharp_d = search_database(database, official_tag="Key|D♯")
+            rebuilt = build_catalog_database(
+                catalog,
+                database_path=database,
+                library_config_path=library,
+            )
+            second = search_database(database, role="bass")
+            stats = database_stats(database)
+
+        self.assertEqual(built["registered_packs"], 1)
+        self.assertEqual(built["official_xmp_items"], 2)
+        self.assertEqual(built["official_tagged_resources"], 1)
+        self.assertEqual(built["unmatched_xmp_items"], 0)
+        self.assertEqual(first[0]["name"], "Deep Bass 128bpm C2")
+        self.assertEqual(first[0]["sample_rate"], 48000)
+        self.assertAlmostEqual(first[0]["duration_seconds"], 1.0)
+        self.assertEqual(first[0]["estimated_bpm"], 128.0)
+        self.assertEqual(first[0]["root_note"], "C2")
+        self.assertEqual(natural_d, [])
+        self.assertEqual(sharp_d[0]["id"], first_id)
+        self.assertIn("ableton_factory:Sounds|Bass|Synth Bass", first[0]["tags"])
+        self.assertIn("ableton_factory:Devices|Sampler", first[0]["tags"])
+        self.assertEqual(second[0]["id"], first_id)
+        self.assertEqual(stats["counts"]["resources"], 1)
+        self.assertEqual(stats["counts"]["audio_features"], 1)
+        self.assertEqual(built["analysis"]["audio"]["analyzed"], 1)
+        self.assertEqual(rebuilt["analysis"]["audio"]["reused"], 1)
+
+    def test_builds_queryable_preset_device_and_sample_links(self) -> None:
+        import gzip
+        import sqlite3
+        import wave
+
+        from ableton_bridge.sound_catalog import scan_sound_catalog
+        from ableton_bridge.sound_catalog_db import build_catalog_database, search_database
+
+        xml = b"""<Ableton><GroupDevicePreset><Device><InstrumentGroupDevice>
+<LomId/><On/><MacroDisplayNames.0 Value="Tone"/><Simpler><LomId/><On/>
+<FileRef><RelativePath Value="../Samples/Kick C2.wav"/></FileRef>
+</Simpler></InstrumentGroupDevice></Device></GroupDevicePreset></Ableton>"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pack = root / "Factory Packs" / "Linked Pack"
+            sample = pack / "Samples" / "Kick C2.wav"
+            preset = pack / "Sounds" / "Kick Rack.adg"
+            sample.parent.mkdir(parents=True)
+            preset.parent.mkdir(parents=True)
+            with wave.open(str(sample), "wb") as handle:
+                handle.setnchannels(1)
+                handle.setsampwidth(2)
+                handle.setframerate(44100)
+                handle.writeframes(b"\x00\x00" * 4410)
+            preset.write_bytes(gzip.compress(xml))
+            database = root / "catalog.sqlite3"
+            catalog = scan_sound_catalog(
+                [root / "Factory Packs"], output_path=None, summary_path=None
+            )
+            built = build_catalog_database(catalog, database_path=database)
+            matches = search_database(database, device="Simpler", rack_type="Instrument")
+            connection = sqlite3.connect(database)
+            try:
+                links = connection.execute(
+                    "SELECT relationship FROM resource_links"
+                ).fetchall()
+            finally:
+                connection.close()
+
+        self.assertEqual(matches[0]["name"], "Kick Rack")
+        self.assertEqual(matches[0]["primary_device"], "Simpler")
+        self.assertEqual(matches[0]["referenced_sample_count"], 1)
+        self.assertEqual(links, [("preset_uses_sample",)])
+        self.assertEqual(built["analysis"]["links"]["resolved"], 1)
+
+    def test_xmp_parser_reports_pack_metadata_and_unmatched_items(self) -> None:
+        from ableton_bridge.sound_catalog import scan_sound_catalog
+        from ableton_bridge.sound_catalog_db import build_catalog_database, parse_pack_xmp
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            packs = root / "Factory Packs"
+            pack = packs / "Metadata Pack"
+            info = pack / "Ableton Folder Info"
+            info.mkdir(parents=True)
+            (info / "tags.xmp").write_text(
+                """<x:xmpmeta xmlns:x="adobe:ns:meta/">
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description xmlns:ablFR="https://ns.ableton.com/xmp/fs-resources/1.0/">
+<ablFR:packUniqueId>pack-9</ablFR:packUniqueId><ablFR:packVersion>9.1</ablFR:packVersion>
+<ablFR:items><rdf:Bag><rdf:li rdf:parseType="Resource">
+<ablFR:filePath>Missing.wav</ablFR:filePath><ablFR:keywords><rdf:Bag>
+<rdf:li>Drums|Kick</rdf:li></rdf:Bag></ablFR:keywords>
+</rdf:li></rdf:Bag></ablFR:items></rdf:Description></rdf:RDF></x:xmpmeta>""",
+                encoding="utf-8",
+            )
+            parsed = parse_pack_xmp(pack)
+            catalog = scan_sound_catalog([packs], output_path=None, summary_path=None)
+            result = build_catalog_database(catalog, database_path=root / "catalog.sqlite3")
+
+        self.assertEqual(parsed["unique_id"], "pack-9")
+        self.assertEqual(parsed["pack_version"], "9.1")
+        self.assertEqual(parsed["items"]["missing.wav"], ["Drums|Kick"])
+        self.assertEqual(result["unmatched_xmp_items"], 1)
 
 
 class HttpProtocolTest(unittest.TestCase):

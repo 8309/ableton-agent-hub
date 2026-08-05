@@ -35,7 +35,7 @@ Status legend:
 | Session MIDI clip writing | `/write_clip` | `ableton_bridge.clip_writer` | partial | yes | yes | yes | yes | Writes Session View MIDI clips. |
 | Arrangement MIDI clip writing | `/write_arrangement_clip` | `ableton_bridge.clip_writer` | partial | yes | yes | yes | yes | Writes Arrangement MIDI clips. |
 | Detail clip single-note edit | `/transpose_detail_note` | `ableton_bridge.detail_clip_writer` | partial | yes | yes | yes | yes | Edits the current detail clip note. |
-| Clip note tools | `/clip_note_tools` | `ableton_bridge.clip_note_tools` | yes | yes | yes | yes | yes | Scan candidates first, then read, shift, quantize, delete, or scale velocity by `candidate_index`. |
+| Clip note tools | `/clip_note_tools` | `ableton_bridge.clip_note_tools` | yes | yes | yes | yes | pending | Legacy scan/read/edit by `candidate_index` is preserved. Bounded `scan_clips_metadata` and direct `read_notes_by_clip_id` time-window pages are Live-validated for faster song-context caching without full-note pre-scans. |
 | Clip variation tools | `/clip_variation` | `ableton_bridge.clip_variation` | yes | yes | yes | yes | yes | Scans Arrangement MIDI clips; duplicate/fill/thin/mute into a new clip by default. |
 | Arrangement region tools | `/arrangement_tools` | `ableton_bridge.arrangement_tools` | yes | yes | yes | partial | partial | Scan, clear, copy, duplicate, and rename Arrangement regions. Copy/duplicate is MIDI-safe first; audio clips are reported and skipped. |
 | Device chain templates | `/device_chain` | `ableton_bridge.device_chain` | yes | yes | yes | partial | partial | Lists/applies safe native-device templates and applies template parameter presets. |
@@ -47,7 +47,8 @@ Status legend:
 | Manual sample confirmation | `/sample_confirm` | `ableton_bridge.sample_confirm` | yes | n/a | n/a | yes | yes | Scans loaded samples, confirms a chosen Simpler or Drum Rack pad sample path, and compares it with the intended path. Drum Rack pad traversal is best-effort. |
 | Local sample index | local only | `ableton_bridge.sample_index` | yes | n/a | local file update | yes | yes | Verifies paths, rescans nearby folders when an indexed path is missing, updates the local index. |
 | Local sample picker | local only | `ableton_bridge.sample_picker` | yes | n/a | local file update | yes | yes | Ranks existing audio candidates by role/category/style/query, explains ranking reasons, verifies paths, and refreshes nearby folders for missing indexed files. |
-| Local sound catalog | local only | `ableton_bridge.sound_catalog` | yes | n/a | local file update | yes | pending | Scans local Ableton Packs, User Library presets/samples, and common plugin directories; searches by role, kind, Pack, or text. Discovery never implies automatic insertion. |
+| Local sound catalog | local only | `ableton_bridge.sound_catalog` | yes | n/a | local file update | yes | pending | SQLite is the Agent-facing index. It provides stable Pack/resource IDs, FTS5, official XMP provenance, audio header fields, confidence-bearing filename BPM/key/root/loop hints, `.adg`/`.adv` device-chain/macro/FileRef parsing, resolved resource links, incremental fingerprint caching, and structured filters. JSON/Markdown remain compatibility outputs. Waveform-derived features, embeddings, feedback writes, and creative ranking validation remain pending. First full parsing is slow; missing filename evidence stays unknown. Discovery never implies automatic insertion. |
+| Generic current-Set initial read | local orchestration | `scripts/read_current_set.ps1` / `ableton_bridge.initial_read` | yes | n/a | n/a | yes | yes | The repository launcher removes per-session Python/path discovery and defaults to one progressive quick-then-deep process. It atomically exposes a quick checkpoint, then reuses the same metadata for bounded note/mixer reads. Dense pages retry at 4 beats and reuse that width on the same stable track ID. Two Sets are Live-validated: 120 clips at 0.328 s quick / 1.703 s full, and 25 clips at 0.094 s quick / 6.047 s full for 1,479 notes. No Hub reload is required. |
 | Project recommender | local only | `ableton_bridge.recommender` | yes | n/a | n/a | partial | partial | Read-only project/style helper. |
 
 ## Confirmed Live API Limits
@@ -64,6 +65,13 @@ Status legend:
 | Arrangement device-parameter automation envelopes | blocked | `DeviceParameter` exposes current value, read-only `automation_state`, and `re_enable_automation`, but the public LOM exposes no envelope object, breakpoint list, or create/replace/clear function. Draw device automation manually in Live; the Agent may diagnose whether it is active or overridden after the Hub diagnostic update is reloaded. |
 
 ## Latest Live Validations
+
+- Generic initial read: `ableton_bridge.initial_read --depth quick` read tempo,
+  transport, locators, 16 ordinary Tracks, 2 Returns, Main, and 120 Arrangement
+  clips in `328 ms` internal time. `--depth full` reused those collections and
+  added 81 MIDI clip note summaries (1,301 notes) plus 19 mixer targets in
+  `1,703 ms` internal time. Both returned complete with zero warnings/errors and
+  a healthy final ping; measured process wall times were 4.4 s and 3.7 s.
 
 - Unified bounded track reads: the current Set returned 26 ordinary Tracks, 4
   Returns, and Main as 31 ordered records over 11 three-item pages. Python rebuilt

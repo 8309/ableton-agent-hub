@@ -46,7 +46,10 @@ STATIC_FILES = (
     "docs/api_capability_matrix.md",
     "docs/group_track_workflow.md",
     "docs/hub_workflow.md",
+    "docs/current_set_bootstrap.md",
+    "scripts/read_current_set.ps1",
     "tests/test_ableton_bridge.py",
+    "tests/test_initial_read.py",
     "tests/fixtures/.gitkeep",
 )
 
@@ -93,6 +96,8 @@ FORBIDDEN_DESTINATIONS = (
     "ableton_agent/sample_index/local_sample_index.json",
     "ableton_agent/sound_catalog/local_sound_catalog.json",
     "ableton_agent/sound_catalog/local_sound_catalog_summary.md",
+    "ableton_agent/sound_catalog/local_sound_catalog.sqlite3",
+    "ableton_agent/runtime",
 )
 
 FORBIDDEN_TEXT_PATTERNS = (
@@ -287,7 +292,13 @@ def export(source: Path, destination: Path, *, dry_run: bool = False) -> dict:
         "schema_version": 1,
         "source_commit": git_value(source, "rev-parse", "HEAD"),
         "source_has_working_tree_overlay": bool(
-            git_value(source, "status", "--porcelain")
+            git_value(
+                source,
+                "status",
+                "--porcelain",
+                "--",
+                *(path.relative_to(destination).as_posix() for path in copied),
+            )
         ),
         "exported_file_count": len(copied),
         "files": {

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ableton-agent-hub"
-version = "0.1.0a0"
+version = "0.2.0a0"
 description = "Local Max for Live bridge and safe Python toolkit for Ableton Live"
 readme = "README.md"
 license = "MIT"

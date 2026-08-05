@@ -24,7 +24,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\ableton-agent.exe --version
 ```
 
-The expected package version is `0.1.0a0` for this alpha candidate.
+The expected package version is `0.2.0a0` for this alpha candidate.
 
 ## 3. Preview The Hub Installation
 
@@ -86,6 +86,22 @@ Read the global tempo:
 ```
 
 Neither command changes the Set.
+
+Run the standard progressive first read:
+
+```powershell
+.\.venv\Scripts\ableton-agent.exe initial-read
+```
+
+The command first writes `.ableton-agent/current_set_initial_read.quick.json`,
+then reuses the same metadata for MIDI-note and mixer depth and writes
+`.ableton-agent/current_set_initial_read.json`. It is read-only. Checkout users
+can alternatively run `scripts/read_current_set.ps1`, which additionally checks
+for a running Ableton Live process before contacting the Hub.
+
+When using Codex or another coding agent, follow
+[Agent Setup](agent_setup.md) so new sessions use this entrypoint instead of
+rediscovering or parallelizing the underlying UDP commands.
 
 ## 6. Preview Before A Write
 

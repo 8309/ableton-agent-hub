@@ -24,6 +24,10 @@ ableton_agent/sample_index/local_sample_index.json
 ableton_agent/sample_index/*_shortlist.json
 ableton_agent/sound_catalog/local_sound_catalog.json
 ableton_agent/sound_catalog/local_sound_catalog_summary.md
+ableton_agent/sound_catalog/local_sound_catalog.sqlite3
+ableton_agent/sound_catalog/local_sound_catalog.sqlite3-shm
+ableton_agent/sound_catalog/local_sound_catalog.sqlite3-wal
+ableton_agent/runtime/
 
 # Creative projects and generated media do not belong in the public tool repo.
 projects/
