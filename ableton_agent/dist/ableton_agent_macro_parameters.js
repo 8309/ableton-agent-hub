@@ -2,6 +2,8 @@ autowatch = 1;
 inlets = 1;
 outlets = 1;
 
+include("ableton_agent_value_display.js");
+
 var MAX_PARAMETERS = 64;
 
 function list() {
@@ -38,14 +40,6 @@ function idsFrom(raw) {
 
 function normalize(value) {
     return String(value || "").toLowerCase().replace(/^\s+|\s+$/g, "");
-}
-
-function displayValue(parameter, value) {
-    try {
-        return String(valueOf(parameter.call("str_for_value", value), ""));
-    } catch (_error) {
-        return "";
-    }
 }
 
 function trackIds() {
@@ -118,16 +112,15 @@ function resolveDevice(track, payload) {
 function parameterSnapshot(parameterId, index) {
     var parameter = new LiveAPI(function () {}, "id " + parameterId);
     var value = Number(valueOf(parameter.get("value"), 0));
-    return {
+    return AbletonAgentValueDisplay.attachCurrent({
         parameter_index: index,
         parameter_id: parameterId,
         name: String(valueOf(parameter.get("name"), "")),
         value: value,
-        display_value: displayValue(parameter, value),
         min: Number(valueOf(parameter.get("min"), 0)),
         max: Number(valueOf(parameter.get("max"), 1)),
         is_quantized: Boolean(Number(valueOf(parameter.get("is_quantized"), 0)))
-    };
+    }, parameter, value);
 }
 
 function clamp(value, min, max) {
@@ -211,14 +204,22 @@ function plannedChangesFromSnapshot(payload, dryRun, parameters) {
         if (!dryRun) {
             parameter.set("value", target);
         }
+        var beforeDisplay = AbletonAgentValueDisplay.current(parameter, before);
+        var afterDisplay = dryRun
+            ? AbletonAgentValueDisplay.target(parameter, target)
+            : AbletonAgentValueDisplay.current(parameter, target);
         changes.push({
             parameter_index: resolved.parameter_index,
             parameter_id: resolved.parameter_id,
             name: resolved.name,
             before_value: before,
-            before_display: displayValue(parameter, before),
+            before_display: beforeDisplay.display_text,
+            before_display_numeric_value: beforeDisplay.display_numeric_value,
+            before_display_value_source: beforeDisplay.display_value_source,
             after_value: target,
-            after_display: displayValue(parameter, target)
+            after_display: afterDisplay.display_text,
+            after_display_numeric_value: afterDisplay.display_numeric_value,
+            after_display_value_source: afterDisplay.display_value_source
         });
     }
     return {

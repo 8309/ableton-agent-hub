@@ -2,6 +2,8 @@ autowatch = 1;
 inlets = 1;
 outlets = 1;
 
+include("ableton_agent_value_display.js");
+
 
 var MAX_CHANGES = 32;
 var MIX_FIELDS = {
@@ -156,20 +158,13 @@ function resolveTrack(change) {
 function parameterInfo(parameterId) {
     var parameter = new LiveAPI(function () {}, "id " + parameterId);
     var value = Number(valueOf(parameter.get("value"), 0));
-    var displayValue = "";
-    try {
-        displayValue = String(valueOf(parameter.call("str_for_value", value), ""));
-    } catch (_error) {
-        displayValue = "";
-    }
-    return {
+    return AbletonAgentValueDisplay.attachCurrent({
         id: parameterId,
         name: String(valueOf(parameter.get("name"), "")),
         value: value,
         min: Number(valueOf(parameter.get("min"), 0)),
-        max: Number(valueOf(parameter.get("max"), 1)),
-        display_value: displayValue
-    };
+        max: Number(valueOf(parameter.get("max"), 1))
+    }, parameter, value);
 }
 
 
@@ -274,7 +269,7 @@ function preflightChange(change, changeIndex) {
 }
 
 
-function resultForResolved(resolved) {
+function resultForResolved(resolved, dryRun) {
     if (resolved.kind === "property") {
         var afterBool = Boolean(Number(valueOf(safeGet(resolved.track.api, resolved.field, 0), 0)));
         return {
@@ -290,6 +285,10 @@ function resultForResolved(resolved) {
         };
     }
     var after = parameterInfo(resolved.parameter_id);
+    if (dryRun) {
+        after.value = resolved.value;
+        AbletonAgentValueDisplay.attachTarget(after, new LiveAPI(function () {}, "id " + resolved.parameter_id), resolved.value);
+    }
     return {
         change_index: resolved.change_index,
         track_index: resolved.track.index,
@@ -304,15 +303,9 @@ function resultForResolved(resolved) {
             min: resolved.before.min,
             max: resolved.before.max
         },
-        before: {
-            value: resolved.before.value,
-            display_value: resolved.before.display_value
-        },
+        before: AbletonAgentValueDisplay.valuePayload(resolved.before),
         requested_value: resolved.value,
-        after: {
-            value: after.value,
-            display_value: after.display_value
-        }
+        after: AbletonAgentValueDisplay.valuePayload(after)
     };
 }
 
@@ -349,7 +342,7 @@ function setMix(requestId, payloadText, mode) {
         }
 
         for (var resultIndex = 0; resultIndex < resolved.length; resultIndex += 1) {
-            results.push(resultForResolved(resolved[resultIndex]));
+            results.push(resultForResolved(resolved[resultIndex], dryRun));
         }
 
         outlet(0, [requestId, JSON.stringify({

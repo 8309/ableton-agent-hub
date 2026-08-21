@@ -66,8 +66,8 @@ def set_parameters(
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise MultiParameterControlTimeoutError(
-                    f"No set_parameters reply from Ableton Agent Multi Parameter Control on UDP {reply_port}; "
-                    "load Ableton Agent Multi Parameter Control.amxd in the current Set"
+                    f"No set_parameters reply from Ableton Agent Hub on UDP {reply_port}; "
+                    "load Ableton Agent Hub.amxd in the current Set"
                 )
             reply_socket.settimeout(min(remaining, 0.2))
             try:
@@ -101,6 +101,10 @@ def main() -> int:
     parser.add_argument("--commit", action="store_true", help="Actually change the Set. Without this, only dry-runs.")
     parser.add_argument("--section", choices=["track", "return", "main", "master"], help="Apply one section to every --change")
     parser.add_argument("--track-id", type=int, help="Session-stable target id; use one change per command with this option")
+    parser.add_argument("--device-id", type=int, help="Stable Rack or nested device id; requires exactly one --change")
+    parser.add_argument("--parameter-id", type=int, help="Stable parameter id; requires exactly one --change")
+    parser.add_argument("--max-device-depth", type=int, default=None)
+    parser.add_argument("--max-device-count", type=int, default=None)
     parser.add_argument(
         "--value-display",
         choices=["both", "internal", "ui"],
@@ -115,13 +119,21 @@ def main() -> int:
 
     try:
         changes = [parse_change(change) for change in args.change]
-        if args.track_id is not None and len(changes) != 1:
-            raise MultiParameterControlError("--track-id requires exactly one --change")
+        if any(value is not None for value in (args.track_id, args.device_id, args.parameter_id)) and len(changes) != 1:
+            raise MultiParameterControlError("stable ID options require exactly one --change")
         for change in changes:
             if args.section:
                 change["section"] = "main" if args.section == "master" else args.section
             if args.track_id is not None:
                 change["track_id"] = args.track_id
+            if args.device_id is not None:
+                change["device_id"] = args.device_id
+            if args.parameter_id is not None:
+                change["parameter_id"] = args.parameter_id
+            if args.max_device_depth is not None:
+                change["max_device_depth"] = args.max_device_depth
+            if args.max_device_count is not None:
+                change["max_device_count"] = args.max_device_count
         result = set_parameters(
             changes,
             commit=args.commit,

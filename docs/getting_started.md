@@ -24,7 +24,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\ableton-agent.exe --version
 ```
 
-The expected package version is `0.2.0a0` for this alpha candidate.
+The expected package version is `0.3.0a0` for this alpha candidate.
 
 ## 3. Preview The Hub Installation
 

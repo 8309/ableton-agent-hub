@@ -15,12 +15,22 @@ LOCAL_CATALOG = CATALOG_DIR / "local_sound_catalog.json"
 LOCAL_SUMMARY = CATALOG_DIR / "local_sound_catalog_summary.md"
 LOCAL_DATABASE = CATALOG_DIR / "local_sound_catalog.sqlite3"
 
-DEFAULT_ROOTS = (
+FALLBACK_ROOTS = (
     Path.home() / "Documents" / "Ableton" / "Factory Packs",
     Path.home() / "Documents" / "Ableton" / "User Library",
     Path("C:/Program Files/Common Files/VST3"),
     Path("C:/Program Files/VstPlugins"),
 )
+
+
+def default_roots() -> tuple[Path, ...]:
+    """Resolve Live's current Pack location while keeping portable fallbacks."""
+    from .sound_catalog_db import find_latest_library_config, parse_library_config
+
+    library = parse_library_config(find_latest_library_config())
+    configured = library.get("preferred_factory_packs_path")
+    factory_packs = Path(configured) if configured else FALLBACK_ROOTS[0]
+    return (factory_packs, *FALLBACK_ROOTS[1:])
 
 PRESET_EXTENSIONS = {".adg", ".adv", ".amxd", ".fxp", ".vstpreset"}
 PLUGIN_EXTENSIONS = {".vst3", ".dll", ".clap"}
@@ -48,11 +58,12 @@ ROLE_PATTERNS = {
 
 
 def scan_sound_catalog(
-    roots: Iterable[str | Path] = DEFAULT_ROOTS,
+    roots: Iterable[str | Path] | None = None,
     *,
     output_path: str | Path | None = LOCAL_CATALOG,
     summary_path: str | Path | None = LOCAL_SUMMARY,
 ) -> dict[str, Any]:
+    roots = default_roots() if roots is None else roots
     resources: list[dict[str, Any]] = []
     packs: list[dict[str, Any]] = []
     root_results: list[dict[str, Any]] = []
@@ -414,7 +425,7 @@ def main() -> int:
     if args.action == "scan":
         from .sound_catalog_db import build_catalog_database
 
-        catalog = scan_sound_catalog(args.root or DEFAULT_ROOTS, output_path=args.catalog)
+        catalog = scan_sound_catalog(args.root or None, output_path=args.catalog)
         database = build_catalog_database(
             catalog,
             database_path=args.database,

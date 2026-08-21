@@ -2,6 +2,9 @@ autowatch = 1;
 inlets = 1;
 outlets = 1;
 
+include("ableton_agent_device_tree.js");
+include("ableton_agent_value_display.js");
+
 var CHAIN_TEMPLATES = {
     drum_bus_clean: ["Drum Buss", "Glue Compressor"],
     lead_light_space: ["EQ Eight", "Reverb"],
@@ -95,6 +98,15 @@ function trackIds() {
 
 function resolveTrack(payload) {
     var ids = trackIds();
+    if (payload.track_id !== undefined && payload.track_id !== null && payload.track_id !== "") {
+        var requestedId = Number(payload.track_id);
+        var idIndex = ids.indexOf(requestedId);
+        if (idIndex < 0) {
+            throw new Error("track_id is not in the ordinary track list");
+        }
+        var byId = new LiveAPI(function () {}, "id " + requestedId);
+        return {index: idIndex, id: requestedId, name: String(valueOf(byId.get("name"), "")), api: byId};
+    }
     var selector = payload.track_index !== undefined ? payload.track_index : payload.track;
     if (selector === undefined || selector === null || selector === "") {
         selector = payload.track_name;
@@ -119,6 +131,37 @@ function resolveTrack(payload) {
         }
     }
     throw new Error("Track not found: " + selector);
+}
+
+function scanRecursive(payload) {
+    var track = resolveTrack(payload);
+    var rootDeviceId = payload.root_device_id;
+    var scanOptions = {
+        max_depth: payload.max_depth,
+        max_devices: payload.max_devices,
+        budget_ms: payload.budget_ms === undefined && rootDeviceId !== undefined ? 1000 : payload.budget_ms
+    };
+    var tree = rootDeviceId === undefined || rootDeviceId === null || rootDeviceId === ""
+        ? AbletonAgentDeviceTree.scanTrack(track.api, scanOptions)
+        : AbletonAgentDeviceTree.scanSubtree(track.api, rootDeviceId, scanOptions);
+    return {
+        track_index: track.index,
+        track_id: track.id,
+        track_name: track.name,
+        device_count: tree.device_count,
+        truncated: tree.truncated,
+        truncation_reasons: tree.truncation_reasons,
+        max_depth: tree.max_depth,
+        max_devices: tree.max_devices,
+        budget_ms: tree.budget_ms,
+        elapsed_ms: tree.elapsed_ms,
+        root_device_id: tree.root_device_id,
+        root_device_name: tree.root_device_name || null,
+        root_absolute_depth: tree.root_absolute_depth === undefined ? null : tree.root_absolute_depth,
+        root_chain_path: tree.root_chain_path || [],
+        selectable_child_rack_ids: tree.selectable_child_rack_ids,
+        devices: tree.devices
+    };
 }
 
 function deviceNames(track) {
@@ -152,11 +195,7 @@ function resolveDeviceByName(track, name) {
 }
 
 function parameterDisplay(parameter, value) {
-    try {
-        return String(valueOf(parameter.call("str_for_value", value), ""));
-    } catch (_error) {
-        return "";
-    }
+    return AbletonAgentValueDisplay.textForValue(parameter, value);
 }
 
 function resolveParameter(device, name) {
@@ -271,15 +310,23 @@ function applyParameterPreset(payload, dryRun) {
         if (!dryRun) {
             parameter.api.set("value", after);
         }
+        var beforeDisplay = AbletonAgentValueDisplay.current(parameter.api, before);
+        var afterDisplay = dryRun
+            ? AbletonAgentValueDisplay.target(parameter.api, after)
+            : AbletonAgentValueDisplay.current(parameter.api, after);
         planned.push({
             device: device.name,
             device_index: device.index,
             parameter: parameter.name,
             parameter_index: parameter.index,
             before_value: before,
-            before_display: parameterDisplay(parameter.api, before),
+            before_display: beforeDisplay.display_text,
+            before_display_numeric_value: beforeDisplay.display_numeric_value,
+            before_display_value_source: beforeDisplay.display_value_source,
             after_value: after,
-            after_display: parameterDisplay(parameter.api, after)
+            after_display: afterDisplay.display_text,
+            after_display_numeric_value: afterDisplay.display_numeric_value,
+            after_display_value_source: afterDisplay.display_value_source
         });
     }
     return {
@@ -299,9 +346,9 @@ function handleDeviceChain(requestId, payloadText, mode) {
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
         var action = String(payload.action || "list_templates");
-        var allowed = ["list_templates", "apply_template", "apply_parameter_preset"];
+        var allowed = ["list_templates", "scan_recursive", "apply_template", "apply_parameter_preset"];
         if (allowed.indexOf(action) < 0) {
-            throw new Error("action must be list_templates, apply_template, or apply_parameter_preset");
+            throw new Error("action must be list_templates, scan_recursive, apply_template, or apply_parameter_preset");
         }
         if (action === "list_templates") {
             outlet(0, [requestId, JSON.stringify({
@@ -311,6 +358,20 @@ function handleDeviceChain(requestId, payloadText, mode) {
                 action: action,
                 templates: templates(),
                 message: "Device chain templates listed"
+            })]);
+            return;
+        }
+        if (action === "scan_recursive") {
+            if (!dryRun) {
+                throw new Error("scan_recursive is read-only and only accepts dry_run mode");
+            }
+            outlet(0, [requestId, JSON.stringify({
+                ok: true,
+                dry_run: true,
+                applied: false,
+                action: action,
+                tree: scanRecursive(payload),
+                message: "Recursive device tree scanned"
             })]);
             return;
         }

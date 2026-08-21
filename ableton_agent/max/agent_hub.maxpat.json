@@ -257,6 +257,9 @@
     ],
     "dependency_cache": [
       {"name": "ableton_agent_read_core.js", "bootpath": ".", "type": "TEXT", "implicit": 1},
+      {"name": "ableton_agent_device_tree.js", "bootpath": ".", "type": "TEXT", "implicit": 1},
+      {"name": "ableton_agent_value_display.js", "bootpath": ".", "type": "TEXT", "implicit": 1},
+      {"name": "ableton_agent_parameter_diagnostics.js", "bootpath": ".", "type": "TEXT", "implicit": 1},
       {"name": "ableton_agent_snapshot.js", "bootpath": ".", "type": "TEXT", "implicit": 1},
       {"name": "ableton_agent_parameter_summary.js", "bootpath": ".", "type": "TEXT", "implicit": 1},
       {"name": "ableton_agent_mixer_control.js", "bootpath": ".", "type": "TEXT", "implicit": 1},

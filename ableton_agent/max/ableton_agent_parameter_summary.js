@@ -3,10 +3,14 @@ inlets = 1;
 outlets = 1;
 
 include("ableton_agent_read_core.js");
+include("ableton_agent_device_tree.js");
+include("ableton_agent_value_display.js");
+include("ableton_agent_parameter_diagnostics.js");
 
 
 var DEFAULT_MAX_DEVICES_PER_TRACK = 2;
 var DEFAULT_MAX_PARAMETERS_PER_DEVICE = 16;
+var DEFAULT_BOUNDED_PARAMETER_LIMIT = 4;
 var MAX_TRACKS = 64;
 var MAX_DEVICES_PER_TRACK = 8;
 var MAX_PARAMETERS_PER_DEVICE = 32;
@@ -64,15 +68,6 @@ function safeGet(api, propertyName, fallback) {
 }
 
 
-function displayValue(parameter, value) {
-    try {
-        return String(valueOf(parameter.call("str_for_value", value), ""));
-    } catch (_error) {
-        return "";
-    }
-}
-
-
 function automationStateName(value) {
     if (value === 1) {
         return "active";
@@ -120,11 +115,12 @@ function parameterInfo(parameterId, index, includeDisplayValues) {
         min: Number(valueOf(safeGet(parameter, "min", 0), 0)),
         max: Number(valueOf(safeGet(parameter, "max", 1), 1)),
         is_quantized: Boolean(Number(valueOf(safeGet(parameter, "is_quantized", 0), 0))),
+        is_enabled: Boolean(Number(valueOf(safeGet(parameter, "is_enabled", 1), 1))),
         automation_state: currentAutomationState,
         automation_state_name: automationStateName(currentAutomationState)
     };
     if (includeDisplayValues) {
-        result.display_value = displayValue(parameter, value);
+        AbletonAgentValueDisplay.attachCurrent(result, parameter, value);
     }
     return result;
 }
@@ -265,31 +261,35 @@ function resolveInspectionDevice(track, payload) {
         throw new Error("Target track has no devices");
     }
     if (payload.device_id !== undefined && payload.device_id !== null && payload.device_id !== "") {
-        var wantedId = Number(payload.device_id);
-        var idIndex = deviceIds.indexOf(wantedId);
-        if (idIndex < 0) {
-            throw new Error("device_id is not on the target track");
-        }
-        return {index: idIndex, id: wantedId, api: new LiveAPI(function () {}, "id " + wantedId)};
+        var found = AbletonAgentDeviceTree.findDevice(track.api, payload.device_id, {
+            max_depth: payload.max_device_depth,
+            max_devices: payload.max_device_count
+        });
+        return {
+            index: found.record.device_index,
+            id: found.id,
+            api: found.api,
+            record: found.record
+        };
     }
     if (payload.device_index !== undefined) {
         var requestedIndex = Number(payload.device_index);
         if (requestedIndex < 0 || requestedIndex >= deviceIds.length || Math.floor(requestedIndex) !== requestedIndex) {
             throw new Error("device_index is outside the target track device list");
         }
-        return {index: requestedIndex, id: deviceIds[requestedIndex], api: new LiveAPI(function () {}, "id " + deviceIds[requestedIndex])};
+        return {index: requestedIndex, id: deviceIds[requestedIndex], api: new LiveAPI(function () {}, "id " + deviceIds[requestedIndex]), record: null};
     }
     if (payload.device_name || payload.device) {
         var wantedName = normalize(payload.device_name || payload.device);
         for (var namedIndex = 0; namedIndex < deviceIds.length; namedIndex += 1) {
             var namedDevice = new LiveAPI(function () {}, "id " + deviceIds[namedIndex]);
             if (normalize(valueOf(safeGet(namedDevice, "name", ""), "")) === wantedName) {
-                return {index: namedIndex, id: deviceIds[namedIndex], api: namedDevice};
+                return {index: namedIndex, id: deviceIds[namedIndex], api: namedDevice, record: null};
             }
         }
         throw new Error("Device not found on target track: " + (payload.device_name || payload.device));
     }
-    return {index: 0, id: deviceIds[0], api: new LiveAPI(function () {}, "id " + deviceIds[0])};
+    return {index: 0, id: deviceIds[0], api: new LiveAPI(function () {}, "id " + deviceIds[0]), record: null};
 }
 
 
@@ -301,7 +301,7 @@ function enumValues(parameter, minimum, maximum) {
     }
     var values = [];
     for (var value = first; value <= last; value += 1) {
-        values.push({value: value, display_value: displayValue(parameter, value)});
+        values.push(AbletonAgentValueDisplay.attachTarget({value: value}, parameter, value));
     }
     return {available: true, values: values};
 }
@@ -317,16 +317,35 @@ function inspectedParameterInfo(parameterId, index, includeDisplayValues, includ
 }
 
 
-function projectedParameterInfo(parameterId, index, name, read) {
+function projectedParameterInfo(parameterId, index, name, read, diagnostics) {
     var parameter = new LiveAPI(function () {}, "id " + parameterId);
     var result = {};
+    var parameterContext = {index: index, id: parameterId, name: name};
+    AbletonAgentParameterDiagnostics.mark(diagnostics, "parameter_started", {
+        operation: "identity",
+        parameter: parameterContext,
+        property: "name"
+    });
     var needsValue = AbletonAgentReadCore.has(read, "internal_value") || AbletonAgentReadCore.has(read, "display_value");
     var needsMetadata = AbletonAgentReadCore.has(read, "metadata") || AbletonAgentReadCore.has(read, "enum_values");
-    var value = needsValue ? Number(valueOf(safeGet(parameter, "value", 0), 0)) : null;
-    var minimum = needsMetadata ? Number(valueOf(safeGet(parameter, "min", 0), 0)) : null;
-    var maximum = needsMetadata ? Number(valueOf(safeGet(parameter, "max", 1), 1)) : null;
-    var isQuantized = needsMetadata ? Boolean(Number(valueOf(safeGet(parameter, "is_quantized", 0), 0))) : null;
-    var automationState = needsMetadata ? Number(valueOf(safeGet(parameter, "automation_state", 0), 0)) : null;
+    var value = needsValue ? Number(valueOf(AbletonAgentParameterDiagnostics.readProperty(
+        parameter, "value", diagnostics, "internal_value", parameterContext
+    ), 0)) : null;
+    var minimum = needsMetadata ? Number(valueOf(AbletonAgentParameterDiagnostics.readProperty(
+        parameter, "min", diagnostics, "metadata", parameterContext
+    ), 0)) : null;
+    var maximum = needsMetadata ? Number(valueOf(AbletonAgentParameterDiagnostics.readProperty(
+        parameter, "max", diagnostics, "metadata", parameterContext
+    ), 1)) : null;
+    var isQuantized = needsMetadata ? Boolean(Number(valueOf(AbletonAgentParameterDiagnostics.readProperty(
+        parameter, "is_quantized", diagnostics, "metadata", parameterContext
+    ), 0))) : null;
+    var isEnabled = needsMetadata ? Boolean(Number(valueOf(AbletonAgentParameterDiagnostics.readProperty(
+        parameter, "is_enabled", diagnostics, "metadata", parameterContext
+    ), 1))) : null;
+    var automationState = needsMetadata ? Number(valueOf(AbletonAgentParameterDiagnostics.readProperty(
+        parameter, "automation_state", diagnostics, "metadata", parameterContext
+    ), 0)) : null;
     if (AbletonAgentReadCore.has(read, "identity")) {
         result.index = index;
         result.id = parameterId;
@@ -336,6 +355,7 @@ function projectedParameterInfo(parameterId, index, name, read) {
         result.min = minimum;
         result.max = maximum;
         result.is_quantized = isQuantized;
+        result.is_enabled = isEnabled;
         result.automation_state = automationState;
         result.automation_state_name = automationStateName(automationState);
     }
@@ -343,18 +363,31 @@ function projectedParameterInfo(parameterId, index, name, read) {
         result.value = value;
     }
     if (AbletonAgentReadCore.has(read, "display_value")) {
-        result.display_value = displayValue(parameter, value);
+        AbletonAgentParameterDiagnostics.runField(
+            diagnostics, "display_value", parameterContext, "display_value/str_for_value", function () {
+                return AbletonAgentValueDisplay.attachCurrent(result, parameter, value);
+            }
+        );
     }
     if (AbletonAgentReadCore.has(read, "enum_values")) {
-        result.enum_values = isQuantized
-            ? enumValues(parameter, minimum, maximum)
-            : {available: false, reason: "parameter is not quantized", values: []};
+        result.enum_values = AbletonAgentParameterDiagnostics.runField(
+            diagnostics, "enum_values", parameterContext, "str_for_value", function () {
+                return isQuantized
+                    ? enumValues(parameter, minimum, maximum)
+                    : {available: false, reason: "parameter is not quantized", values: []};
+            }
+        );
     }
+    AbletonAgentParameterDiagnostics.mark(diagnostics, "parameter_completed", {
+        operation: null,
+        parameter: parameterContext,
+        property: null
+    });
     return result;
 }
 
 
-function readDeviceParameterPageBounded(requestId, payload, mode) {
+function readDeviceParameterPageBounded(requestId, payload, mode, diagnostics) {
     if (normalize(mode || "dry_run") !== "dry_run") {
         throw new Error("parameter_summary inspection actions are read-only and only accept dry_run mode");
     }
@@ -366,14 +399,33 @@ function readDeviceParameterPageBounded(requestId, payload, mode) {
     var read = AbletonAgentReadCore.parse(payload, {
         max_limit: MAX_PARAMETERS_PER_DEVICE,
         max_cursor: MAX_PARAMETER_SCAN,
+        default_limit: DEFAULT_BOUNDED_PARAMETER_LIMIT,
         allowed_projection: ["identity", "metadata", "internal_value", "display_value", "enum_values"],
         default_projection: ["identity", "metadata", "internal_value"]
     });
+    AbletonAgentParameterDiagnostics.mark(diagnostics, "payload_validated");
+    AbletonAgentParameterDiagnostics.mark(diagnostics, "track_resolving");
     var track = resolveInspectionTrack(payload);
+    AbletonAgentParameterDiagnostics.mark(diagnostics, "track_resolved");
+    AbletonAgentParameterDiagnostics.mark(diagnostics, "device_resolving");
     var device = resolveInspectionDevice(track, payload);
-    var parameterIds = idsFrom(safeGet(device.api, "parameters", [])).slice(0, MAX_PARAMETER_SCAN);
+    AbletonAgentParameterDiagnostics.mark(diagnostics, "device_resolved");
+    AbletonAgentParameterDiagnostics.mark(diagnostics, "parameter_collection_loading");
+    var rawParameterIds;
+    try {
+        rawParameterIds = device.api.get("parameters");
+    } catch (collectionError) {
+        throw AbletonAgentParameterDiagnostics.failure(
+            "lom_collection_read_failed", "LiveAPI parameter collection read failed", diagnostics, collectionError
+        );
+    }
+    var parameterIds = idsFrom(rawParameterIds).slice(0, MAX_PARAMETER_SCAN);
+    AbletonAgentParameterDiagnostics.mark(diagnostics, "parameter_collection_loaded");
     var token = AbletonAgentReadCore.collectionToken(parameterIds);
+    AbletonAgentParameterDiagnostics.mark(diagnostics, "collection_token_verifying");
     AbletonAgentReadCore.verifyCollection(read, token);
+    AbletonAgentParameterDiagnostics.mark(diagnostics, "collection_token_verified");
+    AbletonAgentParameterDiagnostics.mark(diagnostics, "page_started");
     if (read.cursor > parameterIds.length) {
         throw new Error("read.cursor is outside the parameter collection");
     }
@@ -389,10 +441,14 @@ function readDeviceParameterPageBounded(requestId, payload, mode) {
         var rawIndex = read.cursor + scanned;
         var parameterId = parameterIds[rawIndex];
         var parameter = new LiveAPI(function () {}, "id " + parameterId);
-        var name = String(valueOf(safeGet(parameter, "name", ""), ""));
+        var parameterContext = {index: rawIndex, id: parameterId, name: null};
+        var name = String(valueOf(AbletonAgentParameterDiagnostics.readProperty(
+            parameter, "name", diagnostics, "identity", parameterContext
+        ), ""));
+        parameterContext.name = name;
         scanned += 1;
         if (action === "list_parameters" || normalize(name).indexOf(query) >= 0) {
-            parameters.push(projectedParameterInfo(parameterId, rawIndex, name, read));
+            parameters.push(projectedParameterInfo(parameterId, rawIndex, name, read, diagnostics));
         }
     }
     var nextCursor = read.cursor + scanned;
@@ -406,8 +462,10 @@ function readDeviceParameterPageBounded(requestId, payload, mode) {
         collection_token: token,
         warnings: []
     });
-    outlet(0, [requestId, JSON.stringify({
+    AbletonAgentParameterDiagnostics.mark(diagnostics, "page_completed");
+    var response = {
         ok: true,
+        request_id: requestId,
         dry_run: true,
         action: action,
         query: query,
@@ -418,7 +476,11 @@ function readDeviceParameterPageBounded(requestId, payload, mode) {
             track_name: String(valueOf(safeGet(track.api, "name", ""), "")),
             device_index: device.index,
             device_id: device.id,
-            device_name: String(valueOf(safeGet(device.api, "name", ""), ""))
+            device_name: String(valueOf(safeGet(device.api, "name", ""), "")),
+            device_depth: device.record ? device.record.depth : 0,
+            parent_chain_id: device.record ? device.record.parent_chain_id : null,
+            parent_rack_device_id: device.record ? device.record.parent_rack_device_id : null,
+            chain_path: device.record ? device.record.chain_path : []
         },
         parameter_count: parameterIds.length,
         scanned_parameter_count: scanned,
@@ -432,14 +494,18 @@ function readDeviceParameterPageBounded(requestId, payload, mode) {
         include_enum_values: AbletonAgentReadCore.has(read, "enum_values"),
         read: readMetadata,
         items: parameters,
-        parameters: parameters
-    })]);
+        parameters: parameters,
+        diagnostics: AbletonAgentParameterDiagnostics.snapshot(diagnostics)
+    };
+    AbletonAgentParameterDiagnostics.mark(diagnostics, "reply_serializing");
+    response.diagnostics = AbletonAgentParameterDiagnostics.snapshot(diagnostics);
+    outlet(0, [requestId, JSON.stringify(response)]);
 }
 
 
-function readDeviceParameterPage(requestId, payload, mode) {
+function readDeviceParameterPage(requestId, payload, mode, diagnostics) {
     if (payload.read && typeof payload.read === "object") {
-        readDeviceParameterPageBounded(requestId, payload, mode);
+        readDeviceParameterPageBounded(requestId, payload, mode, diagnostics);
         return;
     }
     if (normalize(mode || "dry_run") !== "dry_run") {
@@ -451,7 +517,7 @@ function readDeviceParameterPage(requestId, payload, mode) {
         throw new Error("search_parameters requires a non-empty query");
     }
     var offset = clampInt(payload.offset, 0, 0, MAX_PARAMETER_SCAN);
-    var limit = clampInt(payload.limit, DEFAULT_MAX_PARAMETERS_PER_DEVICE, 1, MAX_PARAMETERS_PER_DEVICE);
+    var limit = clampInt(payload.limit, DEFAULT_BOUNDED_PARAMETER_LIMIT, 1, MAX_PARAMETERS_PER_DEVICE);
     var includeDisplayValues = truthy(payload.include_display_values);
     var includeEnumValues = truthy(payload.include_enum_values);
     var track = resolveInspectionTrack(payload);
@@ -500,11 +566,18 @@ function readDeviceParameterPage(requestId, payload, mode) {
 
 
 function readParameterSummary(requestId, payloadText, mode) {
+    var diagnostics = AbletonAgentParameterDiagnostics.create(requestId);
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
+        if (payload.request_id !== undefined && String(payload.request_id) !== String(requestId)) {
+            throw AbletonAgentParameterDiagnostics.failure(
+                "hub_route_failed", "OSC request_id does not match payload request_id", diagnostics, null
+            );
+        }
+        AbletonAgentParameterDiagnostics.mark(diagnostics, "payload_validated");
         var action = normalize(payload.action || "summary");
         if (action === "list_parameters" || action === "search_parameters") {
-            readDeviceParameterPage(requestId, payload, mode);
+            readDeviceParameterPage(requestId, payload, mode, diagnostics);
             return;
         }
         if (action !== "summary") {
@@ -530,9 +603,17 @@ function readParameterSummary(requestId, payloadText, mode) {
             tracks: tracks
         })]);
     } catch (error) {
-        outlet(0, [requestId, JSON.stringify({
-            ok: false,
-            error: error && error.message ? error.message : String(error)
-        })]);
+        var failure = AbletonAgentParameterDiagnostics.structuredError(diagnostics, error);
+        try {
+            outlet(0, [requestId, JSON.stringify(failure)]);
+        } catch (serializationError) {
+            AbletonAgentParameterDiagnostics.mark(diagnostics, "reply_serializing");
+            outlet(0, [requestId, JSON.stringify(AbletonAgentParameterDiagnostics.structuredError(
+                diagnostics,
+                AbletonAgentParameterDiagnostics.failure(
+                    "response_serialization_failed", "Could not serialize parameter_summary response", diagnostics, serializationError
+                )
+            ))]);
+        }
     }
 }

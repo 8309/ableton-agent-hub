@@ -309,6 +309,219 @@ function findExactArrangementClip(track, start, length) {
 }
 
 
+function containsNumber(values, wanted) {
+    for (var index = 0; index < values.length; index += 1) {
+        if (Number(values[index]) === Number(wanted)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
+function clipFingerprint(clip) {
+    return {
+        clip_type: clipType(clip),
+        name: String(valueOf(safeGet(clip, "name", ""), "")),
+        file_path: String(valueOf(safeGet(clip, "file_path", ""), "")),
+        length: clipLength(clip),
+        looping: Number(valueOf(safeGet(clip, "looping", 0), 0)),
+        start_marker: Number(valueOf(safeGet(clip, "start_marker", 0.0), 0.0)),
+        end_marker: Number(valueOf(safeGet(clip, "end_marker", 0.0), 0.0)),
+        loop_start: Number(valueOf(safeGet(clip, "loop_start", 0.0), 0.0)),
+        loop_end: Number(valueOf(safeGet(clip, "loop_end", 0.0), 0.0)),
+        gain: Number(valueOf(safeGet(clip, "gain", 0.0), 0.0)),
+        pitch_coarse: Number(valueOf(safeGet(clip, "pitch_coarse", 0), 0)),
+        pitch_fine: Number(valueOf(safeGet(clip, "pitch_fine", 0.0), 0.0)),
+        warping: Number(valueOf(safeGet(clip, "warping", 0), 0)),
+        warp_mode: Number(valueOf(safeGet(clip, "warp_mode", -1), -1)),
+        ram_mode: Number(valueOf(safeGet(clip, "ram_mode", 0), 0)),
+        muted: Number(valueOf(safeGet(clip, "muted", 0), 0)),
+        color: Number(valueOf(safeGet(clip, "color", 0), 0)),
+        has_envelopes: Number(valueOf(safeGet(clip, "has_envelopes", 0), 0))
+    };
+}
+
+
+function sameFingerprint(before, after) {
+    for (var key in before) {
+        if (!before.hasOwnProperty(key)) {
+            continue;
+        }
+        if (typeof before[key] === "number") {
+            if (Math.abs(Number(before[key]) - Number(after[key])) > 0.0001) {
+                return false;
+            }
+        } else if (String(before[key]) !== String(after[key])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+
+function findDuplicatedClip(track, beforeIds, start, length) {
+    var afterIds = idsFrom(safeGet(track, "arrangement_clips", []));
+    for (var index = 0; index < afterIds.length; index += 1) {
+        if (containsNumber(beforeIds, afterIds[index])) {
+            continue;
+        }
+        var clip = new LiveAPI(function () {}, "id " + afterIds[index]);
+        if (Math.abs(clipStart(clip) - start) < 0.0001 && Math.abs(clipLength(clip) - length) < 0.0001) {
+            return Number(afterIds[index]);
+        }
+    }
+    return 0;
+}
+
+
+function moveAudioClip(payload, dryRun) {
+    var trackId = Number(payload.track_id);
+    var clipId = Number(payload.clip_id);
+    var targetStart = Number(payload.target_start);
+    if (!isFinite(trackId) || trackId <= 0 || Math.floor(trackId) !== trackId) {
+        throw new Error("move_audio_clip requires a positive stable track_id");
+    }
+    if (!isFinite(clipId) || clipId <= 0 || Math.floor(clipId) !== clipId) {
+        throw new Error("move_audio_clip requires a positive stable clip_id");
+    }
+    if (!isFinite(targetStart) || targetStart < 0 || targetStart > 1576800) {
+        throw new Error("target_start must be within the Arrangement beat range");
+    }
+
+    var song = new LiveAPI(function () {}, "live_set");
+    var trackIds = idsFrom(song.get("tracks"));
+    if (!containsNumber(trackIds, trackId)) {
+        throw new Error("Stable track_id was not found in ordinary tracks");
+    }
+    var track = new LiveAPI(function () {}, "id " + trackId);
+    var clipIds = idsFrom(safeGet(track, "arrangement_clips", []));
+    if (!containsNumber(clipIds, clipId)) {
+        throw new Error("Stable clip_id is not an Arrangement clip on the requested track_id");
+    }
+
+    var source = new LiveAPI(function () {}, "id " + clipId);
+    if (clipType(source) !== "audio") {
+        throw new Error("move_audio_clip only accepts an existing Arrangement audio clip");
+    }
+    var sourceStart = clipStart(source);
+    var length = clipLength(source);
+    if (!(length > 0) || targetStart + length > 1576800) {
+        throw new Error("Audio clip length or requested destination is outside the supported Arrangement range");
+    }
+    var fingerprint = clipFingerprint(source);
+    var trackName = String(valueOf(safeGet(track, "name", ""), ""));
+    var planToken = [trackId, clipId, sourceStart.toFixed(6), length.toFixed(6), targetStart.toFixed(6)].join(":");
+
+    for (var index = 0; index < clipIds.length; index += 1) {
+        if (Number(clipIds[index]) === clipId) {
+            continue;
+        }
+        var other = new LiveAPI(function () {}, "id " + clipIds[index]);
+        var otherStart = clipStart(other);
+        var otherLength = clipLength(other);
+        if (overlaps(otherStart, otherLength, targetStart, targetStart + length)) {
+            throw new Error("Target range overlaps another Arrangement clip; move_audio_clip never replaces unrelated clips");
+        }
+    }
+
+    var plan = {
+        track_id: trackId,
+        track_name: trackName,
+        source_clip_id: clipId,
+        clip_name: fingerprint.name,
+        clip_type: fingerprint.clip_type,
+        file_path: fingerprint.file_path,
+        before_start: sourceStart,
+        after_start: targetStart,
+        length: length,
+        plan_token: planToken,
+        same_track_only: true,
+        preserves_by: "Track.duplicate_clip_to_arrangement",
+        no_op: Math.abs(sourceStart - targetStart) < 0.0001
+    };
+    if (dryRun || plan.no_op) {
+        return plan;
+    }
+    if (String(payload.plan_token || "") !== planToken) {
+        throw new Error("Commit requires the current dry-run plan_token");
+    }
+
+    var maxEnd = Math.max(sourceStart + length, targetStart + length);
+    for (var scanIndex = 0; scanIndex < clipIds.length; scanIndex += 1) {
+        var scanClip = new LiveAPI(function () {}, "id " + clipIds[scanIndex]);
+        maxEnd = Math.max(maxEnd, clipStart(scanClip) + clipLength(scanClip));
+    }
+    var stagingStart = maxEnd + 8.0;
+    if (stagingStart + length > 1576800) {
+        throw new Error("No safe temporary Arrangement position is available for this move");
+    }
+
+    var stagingId = 0;
+    var finalId = 0;
+    var sourceDeleted = false;
+    var restoredId = 0;
+    var beforeStageIds = idsFrom(safeGet(track, "arrangement_clips", []));
+    track.call("duplicate_clip_to_arrangement", "id " + clipId, stagingStart);
+    stagingId = findDuplicatedClip(track, beforeStageIds, stagingStart, length);
+    if (!stagingId) {
+        throw new Error("Live duplicated the audio clip but the temporary copy could not be resolved");
+    }
+    var stagingClip = new LiveAPI(function () {}, "id " + stagingId);
+    if (!sameFingerprint(fingerprint, clipFingerprint(stagingClip))) {
+        track.call("delete_clip", "id " + stagingId);
+        throw new Error("Temporary audio copy did not preserve the verified clip fingerprint");
+    }
+
+    try {
+        track.call("delete_clip", "id " + clipId);
+        sourceDeleted = true;
+        var beforeFinalIds = idsFrom(safeGet(track, "arrangement_clips", []));
+        track.call("duplicate_clip_to_arrangement", "id " + stagingId, targetStart);
+        finalId = findDuplicatedClip(track, beforeFinalIds, targetStart, length);
+        if (!finalId) {
+            throw new Error("Moved audio clip could not be resolved at the requested beat");
+        }
+        var finalClip = new LiveAPI(function () {}, "id " + finalId);
+        if (!sameFingerprint(fingerprint, clipFingerprint(finalClip))) {
+            throw new Error("Moved audio clip failed property readback verification");
+        }
+        track.call("delete_clip", "id " + stagingId);
+    } catch (moveError) {
+        if (finalId) {
+            try {
+                track.call("delete_clip", "id " + finalId);
+            } catch (_deleteFinalError) {}
+        }
+        if (sourceDeleted && stagingId) {
+            try {
+                var beforeRestoreIds = idsFrom(safeGet(track, "arrangement_clips", []));
+                track.call("duplicate_clip_to_arrangement", "id " + stagingId, sourceStart);
+                restoredId = findDuplicatedClip(track, beforeRestoreIds, sourceStart, length);
+                if (restoredId && sameFingerprint(fingerprint, clipFingerprint(new LiveAPI(function () {}, "id " + restoredId)))) {
+                    track.call("delete_clip", "id " + stagingId);
+                    throw new Error(String(moveError.message || moveError) + "; original position was restored as clip_id " + restoredId);
+                }
+            } catch (restoreError) {
+                if (String(restoreError.message || restoreError).indexOf("original position was restored") >= 0) {
+                    throw restoreError;
+                }
+                throw new Error(String(moveError.message || moveError) + "; automatic restore failed and temporary clip_id " + stagingId + " was retained at beat " + stagingStart);
+            }
+        }
+        throw moveError;
+    }
+
+    plan.after_clip_id = finalId;
+    plan.after_readback = {
+        clip_id: finalId,
+        start_time: clipStart(new LiveAPI(function () {}, "id " + finalId)),
+        fingerprint: clipFingerprint(new LiveAPI(function () {}, "id " + finalId))
+    };
+    return plan;
+}
+
+
 function clearRegion(payload, dryRun) {
     var scan = collectRegion(payload);
     rejectUnsafePartialClips(scan, payload);
@@ -425,9 +638,9 @@ function handleArrangementTools(requestId, payloadText, mode) {
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
         var action = String(payload.action || "scan_region");
-        var allowed = ["scan_region", "clear_region", "copy_region", "duplicate_region", "rename_region_clip"];
+        var allowed = ["scan_region", "clear_region", "copy_region", "duplicate_region", "rename_region_clip", "move_audio_clip"];
         if (allowed.indexOf(action) < 0) {
-            throw new Error("action must be scan_region, clear_region, copy_region, duplicate_region, or rename_region_clip");
+            throw new Error("action must be scan_region, clear_region, copy_region, duplicate_region, rename_region_clip, or move_audio_clip");
         }
         if (action === "scan_region") {
             var scan = scanRegion(payload);
@@ -450,6 +663,8 @@ function handleArrangementTools(requestId, payloadText, mode) {
 
         var result = action === "clear_region"
             ? clearRegion(payload, dryRun)
+            : action === "move_audio_clip"
+                ? moveAudioClip(payload, dryRun)
             : action === "rename_region_clip"
                 ? renameRegionClip(payload, dryRun)
                 : copyRegion(payload, dryRun);

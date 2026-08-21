@@ -69,6 +69,36 @@ class PublicBoundaryTest(unittest.TestCase):
                 export(source, destination, dry_run=True)
             self.assertFalse(destination.exists())
 
+    def test_exporter_hub_javascript_matches_public_builder(self) -> None:
+        from build_hub_device import JAVASCRIPT_SOURCES
+        from tools.export_from_workspace import HUB_JAVASCRIPT
+
+        self.assertEqual(
+            tuple(source.name for source in JAVASCRIPT_SOURCES),
+            HUB_JAVASCRIPT,
+        )
+
+    def test_legacy_test_filter_allows_methods_already_removed_upstream(self) -> None:
+        from tools.export_from_workspace import export_public_tests
+
+        source = """\
+class DevicePackageTest:
+    def test_builds_amxd_with_required_bridge_objects(self):
+        pass
+
+    def test_current_hub_behavior(self):
+        pass
+"""
+        with tempfile.TemporaryDirectory() as root:
+            source_path = Path(root) / "source.py"
+            destination_path = Path(root) / "destination.py"
+            source_path.write_text(source, encoding="utf-8")
+            export_public_tests(source_path, destination_path)
+            exported = destination_path.read_text(encoding="utf-8")
+
+        self.assertNotIn("test_builds_amxd_with_required_bridge_objects", exported)
+        self.assertIn("test_current_hub_behavior", exported)
+
     def test_hub_source_and_dist_javascript_match(self) -> None:
         from build_hub_device import JAVASCRIPT_SOURCES
 

@@ -766,6 +766,66 @@ class ArrangementToolsClientTest(unittest.TestCase):
         self.assertTrue(result["dry_run"])
         self.assertEqual(result["action"], "duplicate_region")
 
+    def test_arrangement_tools_move_audio_clip_commit_uses_stable_ids_and_plan_token(self) -> None:
+        from ableton_bridge.arrangement_tools import arrangement_tools
+        from ableton_bridge.osc import decode_message, encode_message
+
+        class FakeSocket:
+            reply = None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def setsockopt(self, *_args):
+                return None
+
+            def bind(self, *_args):
+                return None
+
+            def settimeout(self, *_args):
+                return None
+
+            def sendto(self, packet, _address):
+                path, args = decode_message(packet)
+                if path != "/arrangement_tools" or args[2] != "commit":
+                    raise AssertionError((path, args))
+                payload = json.loads(args[1])
+                expected = {
+                    "action": "move_audio_clip",
+                    "track_id": 4,
+                    "clip_id": 1394,
+                    "target_start": 15.0,
+                    "plan_token": "4:1394:16.000000:2.000000:15.000000",
+                }
+                if payload != expected:
+                    raise AssertionError(payload)
+                FakeSocket.reply = encode_message(
+                    "/arrangement_tools",
+                    [args[0], json.dumps({"ok": True, "dry_run": False, "action": "move_audio_clip", "plan": {"after_clip_id": 1401}})],
+                )
+
+            def recvfrom(self, _size):
+                if FakeSocket.reply is None:
+                    raise socket.timeout()
+                return FakeSocket.reply, ("127.0.0.1", 7400)
+
+        with patch("ableton_bridge.arrangement_tools.socket.socket", side_effect=lambda *_args: FakeSocket()):
+            result = arrangement_tools(
+                "move_audio_clip",
+                commit=True,
+                track_id=4,
+                clip_id=1394,
+                target_start=15,
+                plan_token="4:1394:16.000000:2.000000:15.000000",
+                timeout=1.0,
+            )
+
+        self.assertFalse(result["dry_run"])
+        self.assertEqual(result["plan"]["after_clip_id"], 1401)
+
 
 class TrackManagementClientTest(unittest.TestCase):
     def test_track_management_scan_tracks_dry_run_correlates_reply(self) -> None:
@@ -827,6 +887,7 @@ class TrackManagementClientTest(unittest.TestCase):
         class FakeSocket:
             reply = None
             requests = []
+            request_ids = []
 
             def __enter__(self):
                 return self
@@ -1595,6 +1656,91 @@ class SceneClientTest(unittest.TestCase):
 
 
 class DeviceChainClientTest(unittest.TestCase):
+    def test_device_chain_rooted_scan_passes_stable_root_and_budget(self) -> None:
+        from ableton_bridge.device_chain import device_chain
+
+        with patch("ableton_bridge.device_chain._request", return_value={"ok": True}) as request:
+            result = device_chain(
+                "scan_recursive",
+                track_id=101,
+                root_device_id=202,
+                max_depth=2,
+                max_devices=32,
+                budget_ms=750,
+                timeout=1.0,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            request.call_args.args[0],
+            {
+                "action": "scan_recursive",
+                "track_id": 101,
+                "root_device_id": 202,
+                "max_depth": 2,
+                "max_devices": 32,
+                "budget_ms": 750,
+            },
+        )
+
+    def test_device_chain_rooted_scan_rejects_invalid_bounds_before_request(self) -> None:
+        from ableton_bridge.device_chain import DeviceChainError, device_chain
+
+        with patch("ableton_bridge.device_chain._request") as request:
+            with self.assertRaisesRegex(DeviceChainError, "root_device_id"):
+                device_chain("scan_recursive", track_id=101, root_device_id=0)
+            with self.assertRaisesRegex(DeviceChainError, "budget_ms"):
+                device_chain("scan_recursive", track_id=101, root_device_id=202, budget_ms=5001)
+        request.assert_not_called()
+
+    def test_device_chain_recursive_scan_uses_stable_track_id_and_limits(self) -> None:
+        from ableton_bridge.device_chain import device_chain
+        from ableton_bridge.osc import decode_message, encode_message
+
+        expected = {
+            "action": "scan_recursive",
+            "track_id": 101,
+            "max_depth": 4,
+            "max_devices": 64,
+        }
+
+        class FakeSocket:
+            reply = None
+
+            def __enter__(self): return self
+            def __exit__(self, *_args): return None
+            def setsockopt(self, *_args): return None
+            def bind(self, *_args): return None
+            def settimeout(self, *_args): return None
+
+            def sendto(self, packet, _address):
+                path, args = decode_message(packet)
+                if path != "/device_chain" or args[2] != "dry_run":
+                    raise AssertionError((path, args))
+                if json.loads(args[1]) != expected:
+                    raise AssertionError(json.loads(args[1]))
+                FakeSocket.reply = encode_message(
+                    "/device_chain",
+                    [args[0], json.dumps({
+                        "ok": True, "dry_run": True, "action": "scan_recursive",
+                        "tree": {"track_id": 101, "device_count": 3, "devices": []},
+                    })],
+                )
+
+            def recvfrom(self, _size):
+                if FakeSocket.reply is None:
+                    raise socket.timeout()
+                return FakeSocket.reply, ("127.0.0.1", 7400)
+
+        with patch("ableton_bridge.device_chain.socket.socket", side_effect=lambda *_args: FakeSocket()):
+            result = device_chain(
+                "scan_recursive", track_id=101, max_depth=4,
+                max_devices=64, timeout=1.0,
+            )
+
+        self.assertTrue(result["dry_run"])
+        self.assertEqual(result["tree"]["track_id"], 101)
+
     def test_device_chain_list_templates_dry_run_correlates_reply(self) -> None:
         from ableton_bridge.device_chain import device_chain
         from ableton_bridge.osc import decode_message, encode_message
@@ -3134,10 +3280,13 @@ class ParameterSummaryClientTest(unittest.TestCase):
 
             def sendto(self, packet, _address):
                 path, args = decode_message(packet)
-                if path != "/parameter_summary" or len(args) != 2:
+                if path != "/parameter_summary" or len(args) != 3 or args[2] != "dry_run":
                     raise AssertionError((path, args))
                 payload = json.loads(args[1])
+                if payload.pop("request_id") != args[0]:
+                    raise AssertionError(payload)
                 if payload != {
+                    "action": "summary",
                     "max_devices_per_track": 2,
                     "max_parameters_per_device": 8,
                     "include_display_values": False,
@@ -3170,7 +3319,7 @@ class ParameterSummaryClientTest(unittest.TestCase):
                     raise socket.timeout()
                 return FakeSocket.reply, ("127.0.0.1", 7400)
 
-        with patch("ableton_bridge.parameter_summary.socket.socket", side_effect=lambda *_args: FakeSocket()):
+        with patch("ableton_bridge.bounded_read.socket.socket", side_effect=lambda *_args: FakeSocket()):
             result = read_parameter_summary(max_parameters_per_device=8, timeout=1.0)
 
         self.assertEqual(result["track_count"], 1)
@@ -3179,6 +3328,53 @@ class ParameterSummaryClientTest(unittest.TestCase):
 
 
 class ParameterSummaryInspectionClientTest(unittest.TestCase):
+    def test_cli_omitted_limit_uses_four(self) -> None:
+        from ableton_bridge.parameter_summary import main
+
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "parameter_summary",
+                    "--action",
+                    "list_parameters",
+                    "--track-id",
+                    "101",
+                    "--device-id",
+                    "202",
+                ],
+            ),
+            patch(
+                "ableton_bridge.parameter_summary.inspect_device_parameters",
+                return_value={"ok": True},
+            ) as inspect,
+            patch("builtins.print"),
+        ):
+            self.assertEqual(main(), 0)
+
+        self.assertEqual(inspect.call_args.kwargs["offset"], 0)
+        self.assertEqual(inspect.call_args.kwargs["limit"], 4)
+
+    def test_bounded_parameter_defaults_and_explicit_override(self) -> None:
+        from ableton_bridge.parameter_summary import _inspection_payload
+
+        default_payload = _inspection_payload(track_id=101, device_id=202)
+        self.assertEqual(default_payload["offset"], 0)
+        self.assertEqual(default_payload["limit"], 4)
+        self.assertEqual(default_payload["read"]["cursor"], 0)
+        self.assertEqual(default_payload["read"]["limit"], 4)
+
+        explicit_payload = _inspection_payload(
+            track_id=101,
+            device_id=202,
+            offset=6,
+            limit=7,
+        )
+        self.assertEqual(explicit_payload["offset"], 6)
+        self.assertEqual(explicit_payload["limit"], 7)
+        self.assertEqual(explicit_payload["read"]["cursor"], 6)
+        self.assertEqual(explicit_payload["read"]["limit"], 7)
+
     def test_search_parameters_uses_bounded_read_only_payload(self) -> None:
         from ableton_bridge.osc import decode_message, encode_message
         from ableton_bridge.parameter_summary import inspect_device_parameters
@@ -3206,6 +3402,8 @@ class ParameterSummaryInspectionClientTest(unittest.TestCase):
                 if path != "/parameter_summary" or len(args) != 3 or args[2] != "dry_run":
                     raise AssertionError((path, args))
                 payload = json.loads(args[1])
+                if payload.pop("request_id") != args[0]:
+                    raise AssertionError(payload)
                 if payload != {
                     "action": "search_parameters",
                     "section": "track",
@@ -3303,6 +3501,7 @@ class ParameterSummaryInspectionClientTest(unittest.TestCase):
         class FakeSocket:
             reply = None
             requests = []
+            request_ids = []
 
             def __enter__(self):
                 return self
@@ -3322,27 +3521,35 @@ class ParameterSummaryInspectionClientTest(unittest.TestCase):
             def sendto(self, packet, _address):
                 path, args = decode_message(packet)
                 payload = json.loads(args[1])
+                if payload.pop("request_id") != args[0]:
+                    raise AssertionError(payload)
+                FakeSocket.request_ids.append(args[0])
                 read = payload["read"]
                 FakeSocket.requests.append(read.copy())
                 cursor = read["cursor"]
-                names = ["Device On", "Unison Mode"] if cursor == 0 else ["Unison Amount"]
-                items = [{"index": cursor + index, "name": name, "value": index} for index, name in enumerate(names)]
+                if read["limit"] != 4:
+                    raise AssertionError(read)
+                next_cursor = min(cursor + read["limit"], 9)
+                items = [
+                    {"index": index, "name": f"Parameter {index}", "value": index}
+                    for index in range(cursor, next_cursor)
+                ]
                 reply = {
                     "ok": True,
                     "dry_run": True,
                     "action": "list_parameters",
                     "target": {"track_id": 101, "device_id": 202},
-                    "parameter_count": 3,
+                    "parameter_count": 9,
                     "read": {
-                        "complete": cursor == 2,
+                        "complete": next_cursor == 9,
                         "partial": False,
                         "cursor": cursor,
-                        "next_cursor": 2 if cursor == 0 else 3,
-                        "limit": 2,
-                        "scanned_count": 2 if cursor == 0 else 1,
+                        "next_cursor": next_cursor,
+                        "limit": read["limit"],
+                        "scanned_count": next_cursor - cursor,
                         "returned_count": len(items),
-                        "has_more": cursor == 0,
-                        "collection_token": "fnv1a-stable-3",
+                        "has_more": next_cursor < 9,
+                        "collection_token": "fnv1a-stable-9",
                         "elapsed_ms": 3,
                         "warnings": [],
                     },
@@ -3363,17 +3570,21 @@ class ParameterSummaryInspectionClientTest(unittest.TestCase):
             result = inspect_device_parameters(
                 track_id=101,
                 device_id=202,
-                limit=2,
                 timeout=1.0,
                 on_page=lambda page, _result: progress.append(page),
             )
 
         self.assertTrue(result["complete"])
-        self.assertEqual(result["page_count"], 2)
-        self.assertEqual([item["name"] for item in result["parameters"]], ["Device On", "Unison Mode", "Unison Amount"])
+        self.assertEqual(result["page_count"], 3)
+        self.assertEqual([item["index"] for item in result["parameters"]], list(range(9)))
+        self.assertEqual([request["cursor"] for request in FakeSocket.requests], [0, 4, 8])
+        self.assertEqual([request["limit"] for request in FakeSocket.requests], [4, 4, 4])
+        self.assertEqual(len(set(FakeSocket.request_ids)), 1)
+        self.assertEqual(result["request_id"], FakeSocket.request_ids[0])
         self.assertIsNone(FakeSocket.requests[0]["expected_collection_token"])
-        self.assertEqual(FakeSocket.requests[1]["expected_collection_token"], "fnv1a-stable-3")
-        self.assertEqual(progress, [1, 2])
+        self.assertEqual(FakeSocket.requests[1]["expected_collection_token"], "fnv1a-stable-9")
+        self.assertEqual(FakeSocket.requests[2]["expected_collection_token"], "fnv1a-stable-9")
+        self.assertEqual(progress, [1, 2, 3])
 
 
 class BoundedReadCoordinatorTest(unittest.TestCase):
@@ -3454,6 +3665,181 @@ class BoundedReadCoordinatorTest(unittest.TestCase):
         self.assertEqual(result["stop_reason"], "max_items")
         self.assertEqual(len(result["items"]), 2)
         self.assertFalse(result["complete"])
+
+
+class BoundedReadDiagnosticsTest(unittest.TestCase):
+    def setUp(self) -> None:
+        from ableton_bridge.runtime_diagnostics import clear_request_journal
+
+        clear_request_journal()
+
+    def test_request_id_payload_reply_and_journal_are_correlated(self) -> None:
+        from ableton_bridge.bounded_read import request_page
+        from ableton_bridge.osc import decode_message, encode_message
+        from ableton_bridge.runtime_diagnostics import request_journal
+
+        class FakeSocket:
+            replies = []
+
+            def __enter__(self): return self
+            def __exit__(self, *_args): return None
+            def setsockopt(self, *_args): return None
+            def bind(self, *_args): return None
+            def settimeout(self, *_args): return None
+
+            def sendto(self, packet, _address):
+                path, args = decode_message(packet)
+                payload = json.loads(args[1])
+                if path != "/parameter_summary" or payload["request_id"] != args[0]:
+                    raise AssertionError((path, args[0], payload))
+                FakeSocket.replies = [
+                    encode_message(path, [args[0], json.dumps({"ok": True, "request_id": args[0]})])
+                ]
+
+            def recvfrom(self, _size):
+                if not FakeSocket.replies:
+                    raise socket.timeout()
+                return FakeSocket.replies.pop(0), ("127.0.0.1", 7400)
+
+        with patch("ableton_bridge.bounded_read.socket.socket", side_effect=lambda *_args: FakeSocket()):
+            result = request_page(
+                "/parameter_summary",
+                {"action": "list_parameters", "read": {"cursor": 0, "limit": 4}},
+                timeout=1.0,
+                request_id="diagnostic-request",
+            )
+
+        self.assertEqual(result["request_id"], "diagnostic-request")
+        self.assertEqual(result["diagnostics"]["client_stage"], "client_received")
+        self.assertEqual(request_journal()[-1]["status"], "completed")
+
+    def test_python_validation_failure_is_structured(self) -> None:
+        from ableton_bridge.bounded_read import BoundedReadError, request_page
+        from ableton_bridge.runtime_diagnostics import request_journal
+
+        with self.assertRaises(BoundedReadError) as raised:
+            request_page("/parameter_summary", {"not_json": {1, 2, 3}}, timeout=0.01)
+
+        self.assertEqual(raised.exception.error_code, "client_validation_failed")
+        self.assertEqual(raised.exception.error_layer, "python")
+        self.assertEqual(request_journal()[-1]["status"], "failed")
+
+    def test_progress_checkpoint_survives_final_timeout(self) -> None:
+        from ableton_bridge.bounded_read import BoundedReadTimeoutError, request_page
+        from ableton_bridge.osc import decode_message, encode_message
+
+        class FakeSocket:
+            replies = []
+
+            def __enter__(self): return self
+            def __exit__(self, *_args): return None
+            def setsockopt(self, *_args): return None
+            def bind(self, *_args): return None
+            def settimeout(self, *_args): return None
+
+            def sendto(self, packet, _address):
+                _path, args = decode_message(packet)
+                FakeSocket.replies = [encode_message(
+                    "/parameter_summary_progress",
+                    [args[0], json.dumps({
+                        "kind": "progress",
+                        "request_id": args[0],
+                        "checkpoint": {"stage": "parameter_field_started", "property": "value"},
+                    })],
+                )]
+
+            def recvfrom(self, _size):
+                if FakeSocket.replies:
+                    return FakeSocket.replies.pop(0), ("127.0.0.1", 7400)
+                raise socket.timeout()
+
+        with patch("ableton_bridge.bounded_read.socket.socket", side_effect=lambda *_args: FakeSocket()):
+            with self.assertRaises(BoundedReadTimeoutError) as raised:
+                request_page(
+                    "/parameter_summary",
+                    {"read": {"cursor": 0, "limit": 1}},
+                    timeout=0.01,
+                    request_id="progress-timeout",
+                    progress_route="/parameter_summary_progress",
+                )
+
+        self.assertEqual(raised.exception.error_code, "udp_reply_timeout")
+        previous = raised.exception.details["last_checkpoint"]
+        self.assertEqual(previous["last_checkpoint"]["stage"], "parameter_field_started")
+        self.assertEqual(previous["last_hub_checkpoint"]["progress"]["checkpoint"]["property"], "value")
+
+    def test_progress_and_unrelated_packets_do_not_replace_final(self) -> None:
+        from ableton_bridge.bounded_read import request_page
+        from ableton_bridge.osc import decode_message, encode_message
+
+        progress = []
+
+        class FakeSocket:
+            replies = []
+
+            def __enter__(self): return self
+            def __exit__(self, *_args): return None
+            def setsockopt(self, *_args): return None
+            def bind(self, *_args): return None
+            def settimeout(self, *_args): return None
+
+            def sendto(self, packet, _address):
+                path, args = decode_message(packet)
+                FakeSocket.replies = [
+                    encode_message(path, ["other-request", json.dumps({"ok": True})]),
+                    encode_message("/parameter_summary_progress", [args[0], json.dumps({
+                        "kind": "progress", "checkpoint": {"stage": "page_started"}
+                    })]),
+                    encode_message(path, [args[0], json.dumps({"ok": True, "kind": "final"})]),
+                ]
+
+            def recvfrom(self, _size):
+                if not FakeSocket.replies:
+                    raise socket.timeout()
+                return FakeSocket.replies.pop(0), ("127.0.0.1", 7400)
+
+        with patch("ableton_bridge.bounded_read.socket.socket", side_effect=lambda *_args: FakeSocket()):
+            result = request_page(
+                "/parameter_summary",
+                {"read": {"cursor": 0, "limit": 1}},
+                timeout=1.0,
+                progress_route="/parameter_summary_progress",
+                on_progress=progress.append,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["kind"], "final")
+        self.assertEqual([item["checkpoint"]["stage"] for item in progress], ["page_started"])
+
+    def test_auto_collector_failure_retains_page_and_cause(self) -> None:
+        from ableton_bridge.bounded_read import BoundedReadAutoCollectError, BoundedReadTimeoutError, collect_pages
+
+        def fail(_payload, _timeout):
+            raise BoundedReadTimeoutError(
+                "timed out",
+                error_code="udp_reply_timeout",
+                error_layer="udp_client",
+                stage="udp_sent",
+                request_id="page-request",
+            )
+
+        with self.assertRaises(BoundedReadAutoCollectError) as raised:
+            collect_pages(fail, {"read": {"cursor": 4, "limit": 4}})
+
+        self.assertEqual(raised.exception.error_code, "auto_collect_failed")
+        self.assertEqual(raised.exception.details["page"], 1)
+        self.assertEqual(raised.exception.details["cursor"], 4)
+        self.assertEqual(raised.exception.details["cause"]["error_code"], "udp_reply_timeout")
+
+    def test_request_journal_is_bounded(self) -> None:
+        from ableton_bridge.runtime_diagnostics import begin_request, request_journal
+
+        for index in range(80):
+            begin_request(f"request-{index}", "/parameter_summary", {"read": {"cursor": index}})
+
+        rows = request_journal()
+        self.assertEqual(len(rows), 64)
+        self.assertEqual(rows[0]["request_id"], "request-16")
 
 
 class RecommenderTest(unittest.TestCase):
@@ -3798,8 +4184,20 @@ class MixerControlClientTest(unittest.TestCase):
         from ableton_bridge.value_display import format_value_display
 
         payload = {
-            "before": {"value": 0.04, "display_value": "-65.0 dB"},
-            "after": {"value": 0.18, "display_value": "-42.9 dB"},
+            "before": {
+                "value": 0.04,
+                "display_value": "-65.0 dB",
+                "display_text": "-65.0 dB",
+                "display_numeric_value": -65.0,
+                "display_value_source": "lom_display_value",
+            },
+            "after": {
+                "value": 0.18,
+                "display_value": "-42.9 dB",
+                "display_text": "-42.9 dB",
+                "display_numeric_value": None,
+                "display_value_source": "str_for_value_target",
+            },
         }
 
         ui_result = format_value_display(payload, "ui")
@@ -3810,10 +4208,15 @@ class MixerControlClientTest(unittest.TestCase):
         internal_result = format_value_display(payload, "internal")
         self.assertEqual(internal_result["after"]["value"], 0.18)
         self.assertNotIn("display_value", internal_result["after"])
+        self.assertNotIn("display_text", internal_result["after"])
+        self.assertNotIn("display_numeric_value", internal_result["after"])
+        self.assertNotIn("display_value_source", internal_result["after"])
 
         both_result = format_value_display(payload, "both")
         self.assertEqual(both_result["after"]["value"], 0.18)
         self.assertEqual(both_result["after"]["ui_value"], "-42.9 dB")
+        self.assertEqual(both_result["before"]["display_numeric_value"], -65.0)
+        self.assertEqual(both_result["before"]["display_text"], "-65.0 dB")
 
     def test_set_mix_dry_run_correlates_reply(self) -> None:
         from ableton_bridge.mixer_control import set_mix
@@ -4044,6 +4447,53 @@ class ParameterControlClientTest(unittest.TestCase):
 
 
 class MultiParameterControlClientTest(unittest.TestCase):
+    def test_set_parameters_preserves_nested_stable_ids(self) -> None:
+        from ableton_bridge.multi_parameter_control import set_parameters
+        from ableton_bridge.osc import decode_message, encode_message
+
+        change = {
+            "section": "track", "track_id": 101, "device_id": 202,
+            "parameter_id": 303, "parameter": "Filter Freq", "value": 0.5,
+        }
+
+        class FakeSocket:
+            reply = None
+
+            def __enter__(self): return self
+            def __exit__(self, *_args): return None
+            def setsockopt(self, *_args): return None
+            def bind(self, *_args): return None
+            def settimeout(self, *_args): return None
+
+            def sendto(self, packet, _address):
+                path, args = decode_message(packet)
+                if path != "/set_parameters" or args[2] != "dry_run":
+                    raise AssertionError((path, args))
+                if json.loads(args[1]) != {"changes": [change]}:
+                    raise AssertionError(json.loads(args[1]))
+                FakeSocket.reply = encode_message(
+                    "/set_parameters",
+                    [args[0], json.dumps({
+                        "ok": True, "dry_run": True, "applied": False,
+                        "results": [{
+                            "track_id": 101, "device_id": 202,
+                            "target_kind": "nested_device_parameter",
+                            "parameter": {"id": 303, "is_enabled": True},
+                        }],
+                    })],
+                )
+
+            def recvfrom(self, _size):
+                if FakeSocket.reply is None:
+                    raise socket.timeout()
+                return FakeSocket.reply, ("127.0.0.1", 7400)
+
+        with patch("ableton_bridge.multi_parameter_control.socket.socket", side_effect=lambda *_args: FakeSocket()):
+            result = set_parameters([change], timeout=1.0)
+
+        self.assertEqual(result["results"][0]["target_kind"], "nested_device_parameter")
+        self.assertTrue(result["results"][0]["parameter"]["is_enabled"])
+
     def test_set_parameters_dry_run_correlates_reply(self) -> None:
         from ableton_bridge.multi_parameter_control import set_parameters
         from ableton_bridge.osc import decode_message, encode_message
@@ -4316,14 +4766,6 @@ class SpecialTrackClientPayloadTest(unittest.TestCase):
 
 class DevicePackageTest(unittest.TestCase):
 
-
-
-
-
-
-
-
-
     def test_builds_hub_amxd_with_common_agent_modules(self) -> None:
         sys.path.insert(0, str(ROOT / "ableton_agent"))
         from build_hub_device import extract_patch_json
@@ -4334,6 +4776,9 @@ class DevicePackageTest(unittest.TestCase):
             build_hub_amxd(output)
             patch = extract_patch_json(output)
             copied_read_core = (Path(temp_dir) / "ableton_agent_read_core.js").exists()
+            copied_device_tree = (Path(temp_dir) / "ableton_agent_device_tree.js").exists()
+            copied_value_display = (Path(temp_dir) / "ableton_agent_value_display.js").exists()
+            copied_parameter_diagnostics = (Path(temp_dir) / "ableton_agent_parameter_diagnostics.js").exists()
 
         self.assertEqual(output.name, "Ableton Agent Hub.amxd")
         texts = {
@@ -4348,12 +4793,40 @@ class DevicePackageTest(unittest.TestCase):
         self.assertIn("js ableton_agent_snapshot.js", texts)
         self.assertIn("js ableton_agent_parameter_summary.js", texts)
         self.assertTrue(copied_read_core)
+        self.assertTrue(copied_device_tree)
+        self.assertTrue(copied_value_display)
+        self.assertTrue(copied_parameter_diagnostics)
         self.assertIn(
             "ableton_agent_read_core.js",
             {item["name"] for item in patch["patcher"]["dependency_cache"]},
         )
+        self.assertIn(
+            "ableton_agent_device_tree.js",
+            {item["name"] for item in patch["patcher"]["dependency_cache"]},
+        )
+        self.assertIn(
+            "ableton_agent_value_display.js",
+            {item["name"] for item in patch["patcher"]["dependency_cache"]},
+        )
+        self.assertIn(
+            "ableton_agent_parameter_diagnostics.js",
+            {item["name"] for item in patch["patcher"]["dependency_cache"]},
+        )
+        value_display_source = (ROOT / "ableton_agent" / "max" / "ableton_agent_value_display.js").read_text(encoding="utf-8")
+        self.assertIn('parameter.get("display_value")', value_display_source)
+        self.assertIn('parameter.call("str_for_value", value)', value_display_source)
+        self.assertIn('display_value_source: "str_for_value_target"', value_display_source)
         parameter_source = (ROOT / "ableton_agent" / "max" / "ableton_agent_parameter_summary.js").read_text(encoding="utf-8")
         self.assertIn('include("ableton_agent_read_core.js")', parameter_source)
+        self.assertIn('include("ableton_agent_device_tree.js")', parameter_source)
+        self.assertIn('include("ableton_agent_value_display.js")', parameter_source)
+        self.assertIn('include("ableton_agent_parameter_diagnostics.js")', parameter_source)
+        self.assertIn('"lom_collection_read_failed"', parameter_source)
+        self.assertIn('"response_serialization_failed"', parameter_source)
+        self.assertIn('safeGet(parameter, "is_enabled", 1)', parameter_source)
+        self.assertIn("var DEFAULT_BOUNDED_PARAMETER_LIMIT = 4;", parameter_source)
+        self.assertIn("default_limit: DEFAULT_BOUNDED_PARAMETER_LIMIT", parameter_source)
+        self.assertIn("clampInt(payload.limit, DEFAULT_BOUNDED_PARAMETER_LIMIT", parameter_source)
         self.assertIn("scanned < read.limit", parameter_source)
         self.assertIn("readDeviceParameterPageBounded", parameter_source)
         self.assertIn('safeGet(parameter, "automation_state", 0)', parameter_source)
@@ -4369,6 +4842,15 @@ class DevicePackageTest(unittest.TestCase):
         multi_parameter_source = (ROOT / "ableton_agent" / "max" / "ableton_agent_multi_parameter_control.js").read_text(encoding="utf-8")
         self.assertIn('parameter.get("automation_state")', multi_parameter_source)
         self.assertIn("automation_state_name", multi_parameter_source)
+        self.assertIn('include("ableton_agent_device_tree.js")', multi_parameter_source)
+        self.assertIn('include("ableton_agent_value_display.js")', multi_parameter_source)
+        self.assertIn("AbletonAgentValueDisplay.attachTarget", multi_parameter_source)
+        self.assertIn("Parameter is disabled in Live and may be Macro-controlled", multi_parameter_source)
+        self.assertIn("Commit to a nested device requires track_id, device_id, and parameter_id", multi_parameter_source)
+        self.assertIn("device_id: resolved.device_id", multi_parameter_source)
+        device_tree_source = (ROOT / "ableton_agent" / "max" / "ableton_agent_device_tree.js").read_text(encoding="utf-8")
+        self.assertIn("function findInDeviceIds", device_tree_source)
+        self.assertIn("if (deviceId === wanted)", device_tree_source)
         self.assertIn("js ableton_agent_clip_writer.js", texts)
         self.assertIn("js ableton_agent_detail_clip_writer.js", texts)
         self.assertIn("js ableton_agent_clip_note_tools.js", texts)
@@ -4438,15 +4920,19 @@ class DevicePackageTest(unittest.TestCase):
     def test_arrangement_tools_scans_and_edits_regions(self) -> None:
         source = (ROOT / "ableton_agent" / "max" / "ableton_agent_arrangement_tools.js").read_text()
 
-        self.assertIn('var allowed = ["scan_region", "clear_region", "copy_region", "duplicate_region", "rename_region_clip"];', source)
+        self.assertIn('var allowed = ["scan_region", "clear_region", "copy_region", "duplicate_region", "rename_region_clip", "move_audio_clip"];', source)
         self.assertIn("function scanRegion(payload)", source)
         self.assertIn("function clearRegion(payload, dryRun)", source)
         self.assertIn("function copyRegion(payload, dryRun)", source)
         self.assertIn("function renameRegionClip(payload, dryRun)", source)
+        self.assertIn("function moveAudioClip(payload, dryRun)", source)
         self.assertIn("arrangement_clips", source)
         self.assertIn('track.call("delete_clip", "id " + clipInfo.clip_id);', source)
         self.assertIn('track.call("create_midi_clip", destinationStart, clipInfo.length);', source)
         self.assertIn("only MIDI Arrangement clips are copied safely", source)
+        self.assertIn('track.call("duplicate_clip_to_arrangement", "id " + clipId, stagingStart);', source)
+        self.assertIn("Commit requires the current dry-run plan_token", source)
+        self.assertIn("automatic restore failed", source)
 
     def test_track_management_supports_hierarchy_and_blocks_unsupported_group_writes(self) -> None:
         source = (ROOT / "ableton_agent" / "max" / "ableton_agent_track_management.js").read_text()
@@ -4507,13 +4993,21 @@ class DevicePackageTest(unittest.TestCase):
     def test_device_chain_uses_safe_templates_and_insert_device(self) -> None:
         source = (ROOT / "ableton_agent" / "max" / "ableton_agent_device_chain.js").read_text()
 
-        self.assertIn('var allowed = ["list_templates", "apply_template", "apply_parameter_preset"];', source)
+        self.assertIn('var allowed = ["list_templates", "scan_recursive", "apply_template", "apply_parameter_preset"];', source)
+        self.assertIn('include("ableton_agent_device_tree.js")', source)
+        self.assertIn("function scanRecursive(payload)", source)
+        self.assertIn("payload.root_device_id", source)
+        self.assertIn("AbletonAgentDeviceTree.scanSubtree", source)
         self.assertIn("lead_light_space", source)
         self.assertIn("utility_gain_stage", source)
         self.assertIn("CHAIN_PARAMETER_PRESETS", source)
         self.assertIn("function applyParameterPreset(payload, dryRun)", source)
         self.assertIn('track.api.call("insert_device", effect);', source)
         self.assertIn("skipped_existing_devices", source)
+        device_tree = (ROOT / "ableton_agent" / "max" / "ableton_agent_device_tree.js").read_text()
+        self.assertIn("function scanSubtree(track, rootDeviceId, rawOptions)", device_tree)
+        self.assertIn('addReason(state, "budget_ms")', device_tree)
+        self.assertIn("selectable_child_rack_ids", device_tree)
 
     def test_macro_parameters_scans_applies_and_morphs_snapshots(self) -> None:
         source = (ROOT / "ableton_agent" / "max" / "ableton_agent_macro_parameters.js").read_text()
@@ -4579,15 +5073,6 @@ class DevicePackageTest(unittest.TestCase):
         self.assertIn('var allowed = ["list_presets", "read_eq", "apply_preset", "set_band"];', source)
         self.assertIn('parameter.api.set("value", afterValue);', source)
         self.assertIn("skipped_count", source)
-
-
-
-
-
-
-
-
-
 
 
 
@@ -4680,6 +5165,24 @@ class SoundCatalogTest(unittest.TestCase):
         self.assertEqual(catalog["packs"][0]["disk_file_count"], 3)
         self.assertEqual(catalog["packs"][0]["disk_size_bytes"], 15)
         self.assertEqual(catalog["packs"][0]["preset_examples"], ["Deep Bass"])
+
+    def test_default_roots_follow_live_preferred_factory_pack_path(self) -> None:
+        from unittest.mock import patch
+
+        from ableton_bridge.sound_catalog import default_roots
+
+        configured = Path("D:/Ableton/Factory Packs")
+        with patch(
+            "ableton_bridge.sound_catalog_db.find_latest_library_config",
+            return_value=Path("C:/Ableton/Library.cfg"),
+        ), patch(
+            "ableton_bridge.sound_catalog_db.parse_library_config",
+            return_value={"preferred_factory_packs_path": str(configured)},
+        ):
+            roots = default_roots()
+
+        self.assertEqual(roots[0], configured)
+        self.assertIn(Path.home() / "Documents" / "Ableton" / "User Library", roots)
 
     def test_summary_is_compact_and_lists_packs_and_plugins(self) -> None:
         from ableton_bridge.sound_catalog import render_summary

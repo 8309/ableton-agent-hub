@@ -94,7 +94,7 @@ update. Do not run Live validation until the reload is complete.
 - Source and built JS files match.
 - Packaged resources match the built distribution.
 - Installation dry-run resolves the intended destination.
-- Clean temporary installation writes and verifies 24 files.
+- Clean temporary installation writes and verifies 27 files.
 - Hub is manually reloaded.
 - Ping succeeds.
 - One read or dry-run succeeds.

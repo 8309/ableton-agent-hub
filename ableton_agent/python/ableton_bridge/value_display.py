@@ -4,6 +4,12 @@ from typing import Any
 
 
 VALUE_DISPLAY_MODES = {"both", "internal", "ui"}
+UI_DETAIL_FIELDS = {
+    "display_value",
+    "display_text",
+    "display_numeric_value",
+    "display_value_source",
+}
 
 
 class ValueDisplayError(ValueError):
@@ -33,9 +39,10 @@ def _format_value(value: Any, mode: str) -> Any:
         return result
 
     internal_value = result["value"]
-    display_value = result["display_value"]
+    display_value = result.get("display_text", result["display_value"])
     if mode == "internal":
-        result.pop("display_value", None)
+        for field in UI_DETAIL_FIELDS:
+            result.pop(field, None)
         return result
     if mode == "ui":
         result["internal_value"] = internal_value

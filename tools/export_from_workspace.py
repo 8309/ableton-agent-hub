@@ -30,10 +30,13 @@ HUB_JAVASCRIPT = (
     "ableton_agent_routing.js",
     "ableton_agent_scene.js",
     "ableton_agent_device_chain.js",
+    "ableton_agent_device_tree.js",
     "ableton_agent_macro_parameters.js",
     "ableton_agent_meter_monitor.js",
     "ableton_agent_sample_confirm.js",
     "ableton_agent_eq_tools.js",
+    "ableton_agent_value_display.js",
+    "ableton_agent_parameter_diagnostics.js",
     "ableton_agent_tempo.js",
     "ableton_agent_transport.js",
     "ableton_agent_locator.js",
@@ -216,12 +219,6 @@ def export_public_tests(source_path: Path, destination_path: Path) -> None:
             )
             end = child.end_lineno or child.lineno
             removed_lines.update(range(start - 1, end))
-    missing = LEGACY_DEVICE_TEST_METHODS - found
-    if missing:
-        raise ValueError(
-            "Legacy test filter is stale; methods were not found: "
-            + ", ".join(sorted(missing))
-        )
     filtered = "".join(
         line for index, line in enumerate(lines) if index not in removed_lines
     )

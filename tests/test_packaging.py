@@ -27,6 +27,7 @@ class PackagingTest(unittest.TestCase):
             "docs/live_api_limits.md",
             "docs/release_validation_v0.1.0-alpha.md",
             "docs/release_validation_v0.2.0-alpha.md",
+            "docs/release_validation_v0.3.0-alpha.md",
             "docs/agent_setup.md",
             "docs/current_set_bootstrap.md",
             "docs/api_capability_matrix.md",
@@ -48,14 +49,14 @@ class PackagingTest(unittest.TestCase):
             metadata["tool"]["setuptools"]["package-data"]["ableton_bridge.resources.hub"],
             ["*.amxd", "*.js"],
         )
-        self.assertEqual("0.2.0a0", metadata["project"]["version"])
+        self.assertEqual("0.3.0a0", metadata["project"]["version"])
 
     def test_packaged_hub_contains_all_declared_assets(self) -> None:
         from ableton_bridge.install import HUB_FILE_NAMES, _packaged_assets
 
         assets = _packaged_assets()
         self.assertEqual(set(HUB_FILE_NAMES), set(assets))
-        self.assertEqual(24, len(HUB_FILE_NAMES))
+        self.assertEqual(27, len(HUB_FILE_NAMES))
         for name, data in assets.items():
             self.assertEqual((ROOT / "ableton_agent" / "dist" / name).read_bytes(), data)
 
@@ -67,7 +68,7 @@ class PackagingTest(unittest.TestCase):
             result = install_hub(destination, dry_run=True)
             self.assertTrue(result["ok"])
             self.assertTrue(result["dry_run"])
-            self.assertEqual(24, result["changed_file_count"])
+            self.assertEqual(27, result["changed_file_count"])
             self.assertFalse(destination.exists())
 
     def test_install_writes_verifies_and_is_idempotent(self) -> None:
@@ -78,7 +79,7 @@ class PackagingTest(unittest.TestCase):
             first = install_hub(destination)
             second = install_hub(destination)
             self.assertTrue(first["ok"])
-            self.assertEqual(24, first["changed_file_count"])
+            self.assertEqual(27, first["changed_file_count"])
             self.assertEqual(0, second["changed_file_count"])
             self.assertEqual(set(HUB_FILE_NAMES), {path.name for path in destination.iterdir()})
 

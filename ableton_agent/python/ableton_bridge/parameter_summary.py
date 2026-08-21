@@ -2,20 +2,30 @@ from __future__ import annotations
 
 import argparse
 import json
-import socket
-import time
-import uuid
 from typing import Any
 
-from .bounded_read import BoundedReadError, collect_pages, request_page
-from .osc import OscDecodeError, decode_message, encode_message
+from .bounded_read import BoundedReadError, BoundedReadTimeoutError, collect_pages, request_page
+
+
+DEFAULT_BOUNDED_PARAMETER_LIMIT = 4
 
 
 class ParameterSummaryError(RuntimeError):
-    pass
+    error_code = "client_validation_failed"
+    error_layer = "python"
+    stage = "request_created"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ok": False,
+            "error": str(self),
+            "error_code": self.error_code,
+            "error_layer": self.error_layer,
+            "stage": self.stage,
+        }
 
 
-class ParameterSummaryTimeoutError(ParameterSummaryError):
+class ParameterSummaryTimeoutError(BoundedReadTimeoutError, ParameterSummaryError):
     pass
 
 
@@ -34,51 +44,29 @@ def read_parameter_summary(
     if max_parameters_per_device < 1 or max_parameters_per_device > 32:
         raise ParameterSummaryError("max_parameters_per_device must be 1..32")
 
-    request_id = uuid.uuid4().hex
-    payload = json.dumps(
-        {
-            "max_devices_per_track": max_devices_per_track,
-            "max_parameters_per_device": max_parameters_per_device,
-            "include_display_values": include_display_values,
-        },
-        ensure_ascii=False,
-    )
-    packet = encode_message("/parameter_summary", [request_id, payload])
-
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
-        reply_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        reply_socket.bind((host, reply_port))
-        reply_socket.settimeout(min(timeout, 0.2))
-
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as command_socket:
-            command_socket.sendto(packet, (host, command_port))
-
-        deadline = time.monotonic() + timeout
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise ParameterSummaryTimeoutError(
-                    f"No parameter_summary reply from Ableton Agent Hub or Parameter Summary on UDP {reply_port}; "
-                    "load Ableton Agent Hub.amxd in the current Set and retry with fewer parameters if Live is busy"
-                )
-            reply_socket.settimeout(min(remaining, 0.2))
-            try:
-                reply_packet, address = reply_socket.recvfrom(65535)
-            except socket.timeout:
-                continue
-            try:
-                path, arguments = decode_message(reply_packet)
-            except OscDecodeError:
-                continue
-            if path not in ["/parameter_summary", "parameter_summary"] or len(arguments) < 2:
-                continue
-            if arguments[0] != request_id:
-                continue
-            result = json.loads(str(arguments[1]))
-            result["request_id"] = request_id
-            result["from"] = address[0]
-            result["port"] = address[1]
-            return result
+    try:
+        return request_page(
+            "/parameter_summary",
+            {
+                "action": "summary",
+                "max_devices_per_track": max_devices_per_track,
+                "max_parameters_per_device": max_parameters_per_device,
+                "include_display_values": include_display_values,
+            },
+            host=host,
+            command_port=command_port,
+            reply_port=reply_port,
+            timeout=timeout,
+        )
+    except BoundedReadTimeoutError as error:
+        raise ParameterSummaryTimeoutError(
+            str(error),
+            error_code=error.error_code,
+            error_layer=error.error_layer,
+            stage=error.stage,
+            request_id=error.request_id,
+            details=error.details,
+        ) from error
 
 
 def _inspection_payload(
@@ -93,7 +81,7 @@ def _inspection_payload(
     device_index: int | None = None,
     query: str | None = None,
     offset: int = 0,
-    limit: int = 16,
+    limit: int = DEFAULT_BOUNDED_PARAMETER_LIMIT,
     include_display_values: bool = False,
     include_enum_values: bool = False,
     projection: list[str] | None = None,
@@ -241,7 +229,12 @@ def main() -> int:
     parser.add_argument("--device-index", type=int)
     parser.add_argument("--query")
     parser.add_argument("--offset", type=int, default=0)
-    parser.add_argument("--limit", type=int, default=16)
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=DEFAULT_BOUNDED_PARAMETER_LIMIT,
+        help="Parameters inspected per bounded page (default: 4)",
+    )
     parser.add_argument("--include-display-values", action="store_true")
     parser.add_argument("--include-enum-values", action="store_true")
     parser.add_argument("--projection", action="append", choices=["identity", "metadata", "internal_value", "display_value", "enum_values"])
@@ -294,7 +287,8 @@ def main() -> int:
                 timeout=args.timeout,
             )
     except (ParameterSummaryError, BoundedReadError, json.JSONDecodeError) as error:
-        print(json.dumps({"ok": False, "error": str(error)}, indent=2), flush=True)
+        payload = error.to_dict() if hasattr(error, "to_dict") else {"ok": False, "error": str(error)}
+        print(json.dumps(payload, indent=2, ensure_ascii=False), flush=True)
         return 1
     print(json.dumps({"ok": bool(result.get("ok")), "result": result}, indent=2, ensure_ascii=False), flush=True)
     return 0 if result.get("ok") else 1

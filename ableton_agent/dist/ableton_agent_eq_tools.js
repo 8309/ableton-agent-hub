@@ -2,6 +2,8 @@ autowatch = 1;
 inlets = 1;
 outlets = 1;
 
+include("ableton_agent_value_display.js");
+
 
 var EQ_PRESETS = {
     lead_presence_soft: {
@@ -111,15 +113,6 @@ function safeGet(api, propertyName, fallback) {
 }
 
 
-function displayValue(parameter, value) {
-    try {
-        return String(valueOf(parameter.call("str_for_value", value), ""));
-    } catch (_error) {
-        return "";
-    }
-}
-
-
 function trackIds() {
     var song = new LiveAPI(function () {}, "live_set");
     return idsFrom(song.get("tracks"));
@@ -207,16 +200,15 @@ function resolveEqDevice(track, payload) {
 
 function parameterInfo(parameter, index, id) {
     var value = Number(valueOf(parameter.get("value"), 0));
-    return {
+    return AbletonAgentValueDisplay.attachCurrent({
         index: index,
         id: id,
         name: String(valueOf(parameter.get("name"), "")),
         value: value,
         min: Number(valueOf(safeGet(parameter, "min", 0), 0)),
         max: Number(valueOf(safeGet(parameter, "max", 1), 1)),
-        is_quantized: Boolean(Number(valueOf(safeGet(parameter, "is_quantized", 0), 0))),
-        display_value: displayValue(parameter, value)
-    };
+        is_quantized: Boolean(Number(valueOf(safeGet(parameter, "is_quantized", 0), 0)))
+    }, parameter, value);
 }
 
 
@@ -349,7 +341,7 @@ function applyMoves(track, device, moves, dryRun) {
         var after = parameterInfo(parameter.api, parameter.index, parameter.id);
         if (dryRun) {
             after.value = afterValue;
-            after.display_value = displayValue(parameter.api, afterValue);
+            AbletonAgentValueDisplay.attachTarget(after, parameter.api, afterValue);
         }
         changes.push({
             band: band,
@@ -362,15 +354,9 @@ function applyMoves(track, device, moves, dryRun) {
                 max: before.max,
                 is_quantized: before.is_quantized
             },
-            before: {
-                value: before.value,
-                display_value: before.display_value
-            },
+            before: AbletonAgentValueDisplay.valuePayload(before),
             requested_value: Number(move.value),
-            after: {
-                value: after.value,
-                display_value: after.display_value
-            }
+            after: AbletonAgentValueDisplay.valuePayload(after)
         });
     }
     return {

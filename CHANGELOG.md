@@ -5,6 +5,29 @@ follows Keep a Changelog, and version numbers follow semantic versioning.
 
 ## [Unreleased]
 
+## [0.3.0-alpha] - 2026-08-21
+
+### Added
+
+- Targeted recursive Rack/device-tree scans with stable IDs, bounded depth,
+  cumulative device limits, time budgets, and truncation reasons.
+- Runtime diagnostics for parameter reads, including correlated request IDs,
+  structured Hub/LOM errors, stage timings, and a bounded client journal.
+- Safe same-track Arrangement audio clip moves with dry-run plan tokens,
+  collision checks, native duplicate preservation, and readback.
+- Parameter display contracts that preserve exact internal values while
+  returning Live's GUI value and formatted UI text when requested.
+
+### Changed
+
+- Parameter reads now default to four-item pages when the caller omits a limit;
+  explicit limits from 1 to 32 continue to override the default.
+- Rack parameter writes use stable track, device, and parameter IDs and reject
+  disabled parameters that may be controlled by a Macro.
+- The public exporter now follows every Hub JavaScript dependency and tolerates
+  legacy standalone-device tests that have already been removed upstream.
+- Packaged Hub resources increase from 24 to 27 files.
+
 ## [0.2.0-alpha] - 2026-08-05
 
 ### Added

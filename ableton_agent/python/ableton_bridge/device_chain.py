@@ -28,6 +28,13 @@ def device_chain(
     timeout: float = 3.0,
     **payload_fields: Any,
 ) -> dict[str, Any]:
+    if action == "scan_recursive":
+        root_device_id = payload_fields.get("root_device_id")
+        budget_ms = payload_fields.get("budget_ms")
+        if root_device_id is not None and (not isinstance(root_device_id, int) or root_device_id <= 0):
+            raise DeviceChainError("root_device_id must be a positive integer")
+        if budget_ms is not None and (not isinstance(budget_ms, int) or budget_ms < 1 or budget_ms > 5000):
+            raise DeviceChainError("budget_ms must be an integer from 1 to 5000")
     payload = {"action": action}
     payload.update({key: value for key, value in payload_fields.items() if value is not None})
     return _request(payload, commit=commit, host=host, command_port=command_port, reply_port=reply_port, timeout=timeout)
@@ -69,12 +76,17 @@ def _request(payload: dict[str, Any], *, commit: bool, host: str, command_port: 
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="List or apply safe Ableton device chain templates")
-    parser.add_argument("--action", default="list_templates", choices=["list_templates", "apply_template", "apply_parameter_preset"])
+    parser = argparse.ArgumentParser(description="Inspect Rack device trees or apply safe Ableton device chain templates")
+    parser.add_argument("--action", default="list_templates", choices=["list_templates", "scan_recursive", "apply_template", "apply_parameter_preset"])
     parser.add_argument("--template")
     parser.add_argument("--preset")
     parser.add_argument("--track")
     parser.add_argument("--track-index", type=int, dest="track_index")
+    parser.add_argument("--track-id", type=int, dest="track_id")
+    parser.add_argument("--max-depth", type=int, default=None)
+    parser.add_argument("--max-devices", type=int, default=None)
+    parser.add_argument("--root-device-id", type=int, default=None)
+    parser.add_argument("--budget-ms", type=int, default=None)
     parser.add_argument("--apply-preset", action="store_true")
     parser.add_argument("--allow-duplicate", action="store_true")
     parser.add_argument("--commit", action="store_true")
@@ -95,6 +107,11 @@ def main() -> int:
             preset=args.preset,
             track=int(args.track) if args.track and args.track.isdigit() else args.track,
             track_index=args.track_index,
+            track_id=args.track_id,
+            max_depth=args.max_depth,
+            max_devices=args.max_devices,
+            root_device_id=args.root_device_id,
+            budget_ms=args.budget_ms,
             apply_preset=args.apply_preset if args.apply_preset else None,
             allow_duplicate=args.allow_duplicate if args.allow_duplicate else None,
         )

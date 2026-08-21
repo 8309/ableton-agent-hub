@@ -2,6 +2,8 @@ autowatch = 1;
 inlets = 1;
 outlets = 1;
 
+include("ableton_agent_value_display.js");
+
 
 function bang() {
     readSnapshot("");
@@ -142,20 +144,13 @@ function parameterSnapshot(parameterId) {
     }
     var parameter = new LiveAPI(function () {}, "id " + parameterId);
     var value = numberProperty(parameter, "value", 0);
-    var displayValue = "";
-    try {
-        displayValue = String(valueOf(parameter.call("str_for_value", value), ""));
-    } catch (_error) {
-        displayValue = "";
-    }
-    return {
+    return AbletonAgentValueDisplay.attachCurrent({
         id: parameterId,
         name: stringProperty(parameter, "name", ""),
         value: value,
         min: numberProperty(parameter, "min", 0),
-        max: numberProperty(parameter, "max", 1),
-        display_value: displayValue
-    };
+        max: numberProperty(parameter, "max", 1)
+    }, parameter, value);
 }
 
 

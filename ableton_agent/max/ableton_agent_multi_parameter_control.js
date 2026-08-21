@@ -2,6 +2,9 @@ autowatch = 1;
 inlets = 1;
 outlets = 1;
 
+include("ableton_agent_device_tree.js");
+include("ableton_agent_value_display.js");
+
 
 var MAX_CHANGES = 16;
 var BLOCKED_PARAMETERS = {
@@ -61,15 +64,6 @@ function normalize(value) {
 }
 
 
-function displayValue(parameter, value) {
-    try {
-        return String(valueOf(parameter.call("str_for_value", value), ""));
-    } catch (_error) {
-        return "";
-    }
-}
-
-
 function automationState(parameter) {
     try {
         return Number(valueOf(parameter.get("automation_state"), 0));
@@ -93,7 +87,7 @@ function automationStateName(value) {
 function parameterInfo(parameter, index, id) {
     var value = Number(valueOf(parameter.get("value"), 0));
     var currentAutomationState = automationState(parameter);
-    return {
+    return AbletonAgentValueDisplay.attachCurrent({
         index: index,
         id: id,
         name: String(valueOf(parameter.get("name"), "")),
@@ -101,10 +95,10 @@ function parameterInfo(parameter, index, id) {
         min: Number(valueOf(parameter.get("min"), 0)),
         max: Number(valueOf(parameter.get("max"), 1)),
         is_quantized: Boolean(Number(valueOf(parameter.get("is_quantized"), 0))),
-        display_value: displayValue(parameter, value),
+        is_enabled: Boolean(Number(valueOf(AbletonAgentDeviceTree.safeGet(parameter, "is_enabled", 1), 1))),
         automation_state: currentAutomationState,
         automation_state_name: automationStateName(currentAutomationState)
-    };
+    }, parameter, value);
 }
 
 
@@ -181,10 +175,17 @@ function resolveTrack(change) {
 }
 
 
-function targetDeviceId(track, change) {
+function targetDevice(track, change) {
     var deviceIds = idsFrom(track.get("devices"));
     if (!deviceIds.length) {
         throw new Error("Track has no devices");
+    }
+
+    if (change.device_id !== undefined && change.device_id !== null && change.device_id !== "") {
+        return AbletonAgentDeviceTree.findDevice(track, change.device_id, {
+            max_depth: change.max_device_depth,
+            max_devices: change.max_device_count
+        });
     }
 
     if (change.device_index !== undefined) {
@@ -192,7 +193,11 @@ function targetDeviceId(track, change) {
         if (requestedIndex < 0 || requestedIndex >= deviceIds.length || Math.floor(requestedIndex) !== requestedIndex) {
             throw new Error("device_index is outside this track device list");
         }
-        return deviceIds[requestedIndex];
+        return {
+            id: deviceIds[requestedIndex],
+            api: new LiveAPI(function () {}, "id " + deviceIds[requestedIndex]),
+            record: null
+        };
     }
 
     if (change.device_name || change.device) {
@@ -201,7 +206,7 @@ function targetDeviceId(track, change) {
             var namedDevice = new LiveAPI(function () {}, "id " + deviceIds[namedIndex]);
             var namedName = String(valueOf(namedDevice.get("name"), ""));
             if (normalize(namedName) === wanted) {
-                return deviceIds[namedIndex];
+                return {id: deviceIds[namedIndex], api: namedDevice, record: null};
             }
         }
         throw new Error("Device not found on track: " + (change.device_name || change.device));
@@ -212,10 +217,10 @@ function targetDeviceId(track, change) {
         var className = String(valueOf(device.get("class_name"), ""));
         var name = String(valueOf(device.get("name"), ""));
         if (className !== "MxDeviceMidiEffect" && name.indexOf("Ableton Agent") !== 0) {
-            return deviceIds[index];
+            return {id: deviceIds[index], api: device, record: null};
         }
     }
-    return deviceIds[0];
+    return {id: deviceIds[0], api: new LiveAPI(function () {}, "id " + deviceIds[0]), record: null};
 }
 
 
@@ -224,10 +229,22 @@ function selectorIsIndex(selector) {
 }
 
 
-function resolveParameter(device, selector) {
+function resolveParameter(device, selector, parameterId) {
     var parameterIds = idsFrom(device.get("parameters"));
     if (!parameterIds.length) {
         throw new Error("Target device has no parameters");
+    }
+    if (parameterId !== undefined && parameterId !== null && parameterId !== "") {
+        var wantedId = Number(parameterId);
+        var idIndex = parameterIds.indexOf(wantedId);
+        if (idIndex < 0) {
+            throw new Error("parameter_id is not on the target device");
+        }
+        return {
+            index: idIndex,
+            id: wantedId,
+            api: new LiveAPI(function () {}, "id " + wantedId)
+        };
     }
     if (selector === undefined || selector === null || selector === "") {
         throw new Error("Missing parameter selector");
@@ -274,10 +291,11 @@ function normalizeChanges(payload) {
 
 function preflightChange(change, changeIndex) {
     var track = resolveTrack(change);
-    var deviceId = targetDeviceId(track.api, change);
-    var device = new LiveAPI(function () {}, "id " + deviceId);
+    var deviceTarget = targetDevice(track.api, change);
+    var deviceId = deviceTarget.id;
+    var device = deviceTarget.api;
     var selector = change.parameter !== undefined ? change.parameter : change.parameter_name;
-    var parameter = resolveParameter(device, selector);
+    var parameter = resolveParameter(device, selector, change.parameter_id);
     var before = parameterInfo(parameter.api, parameter.index, parameter.id);
     var value = Number(change.value);
     if (!isFinite(value)) {
@@ -285,6 +303,9 @@ function preflightChange(change, changeIndex) {
     }
     if (BLOCKED_PARAMETERS[normalize(before.name)]) {
         throw new Error("Refusing to control protected parameter: " + before.name);
+    }
+    if (!before.is_enabled) {
+        throw new Error("Parameter is disabled in Live and may be Macro-controlled: " + before.name);
     }
     if (value < before.min || value > before.max) {
         throw new Error("Value must be between " + before.min + " and " + before.max);
@@ -297,6 +318,7 @@ function preflightChange(change, changeIndex) {
         track: track,
         device_id: deviceId,
         device: device,
+        device_record: deviceTarget.record,
         parameter: parameter,
         before: before,
         value: value
@@ -311,25 +333,28 @@ function resultForResolved(resolved, after) {
         track_index: resolved.track.index,
         track_id: resolved.track.id,
         track_name: String(valueOf(resolved.track.api.get("name"), "")),
+        device_id: resolved.device_id,
         device_name: String(valueOf(resolved.device.get("name"), "")),
         device_class_name: String(valueOf(resolved.device.get("class_name"), "")),
+        device_depth: resolved.device_record ? resolved.device_record.depth : 0,
+        parent_chain_id: resolved.device_record ? resolved.device_record.parent_chain_id : null,
+        parent_rack_device_id: resolved.device_record ? resolved.device_record.parent_rack_device_id : null,
+        chain_path: resolved.device_record ? resolved.device_record.chain_path : [],
+        target_kind: Boolean(Number(valueOf(AbletonAgentDeviceTree.safeGet(resolved.device, "can_have_chains", 0), 0)))
+            ? "rack_parameter"
+            : (resolved.device_record && resolved.device_record.depth > 0 ? "nested_device_parameter" : "device_parameter"),
         parameter: {
             index: resolved.before.index,
             id: resolved.before.id,
             name: resolved.before.name,
             min: resolved.before.min,
             max: resolved.before.max,
-            is_quantized: resolved.before.is_quantized
+            is_quantized: resolved.before.is_quantized,
+            is_enabled: resolved.before.is_enabled
         },
-        before: {
-            value: resolved.before.value,
-            display_value: resolved.before.display_value
-        },
+        before: AbletonAgentValueDisplay.valuePayload(resolved.before),
         requested_value: resolved.value,
-        after: {
-            value: after.value,
-            display_value: after.display_value
-        }
+        after: AbletonAgentValueDisplay.valuePayload(after)
     };
 }
 
@@ -351,6 +376,11 @@ function setParameters(requestId, payloadText, mode) {
                 if (resolved[identityIndex].track.section !== "track" && Number(changes[identityIndex].track_id) !== resolved[identityIndex].track.id) {
                     throw new Error("Commit to Return/Main requires track_id from the preceding dry-run");
                 }
+                if (resolved[identityIndex].device_record && resolved[identityIndex].device_record.depth > 0) {
+                    if (changes[identityIndex].track_id === undefined || changes[identityIndex].device_id === undefined || changes[identityIndex].parameter_id === undefined) {
+                        throw new Error("Commit to a nested device requires track_id, device_id, and parameter_id from the preceding dry-run");
+                    }
+                }
             }
         }
 
@@ -366,6 +396,14 @@ function setParameters(requestId, payloadText, mode) {
                 resolved[resultIndex].parameter.index,
                 resolved[resultIndex].parameter.id
             );
+            if (dryRun) {
+                after.value = resolved[resultIndex].value;
+                AbletonAgentValueDisplay.attachTarget(
+                    after,
+                    resolved[resultIndex].parameter.api,
+                    resolved[resultIndex].value
+                );
+            }
             results.push(resultForResolved(resolved[resultIndex], after));
         }
 

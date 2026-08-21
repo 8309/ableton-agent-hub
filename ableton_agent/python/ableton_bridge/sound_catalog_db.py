@@ -206,7 +206,12 @@ def find_latest_library_config(root: str | Path = ABLETON_ROAMING) -> Path | Non
 
 def parse_library_config(path: str | Path | None) -> dict[str, Any]:
     if path is None or not Path(path).exists():
-        return {"path": None, "creator": None, "packs": {}}
+        return {
+            "path": None,
+            "creator": None,
+            "packs": {},
+            "preferred_factory_packs_path": None,
+        }
     source = Path(path)
     root = ET.parse(source).getroot()
     packs: dict[str, dict[str, Any]] = {}
@@ -219,10 +224,14 @@ def parse_library_config(path: str | Path | None) -> dict[str, Any]:
             "library_id": item.attrib.get("Id", ""),
         }
         packs[_normal_path(pack_path)] = record
+    preferred = root.find(".//PreferredFactoryPacksInstallationPath")
     return {
         "path": str(source),
         "creator": root.attrib.get("Creator"),
         "packs": packs,
+        "preferred_factory_packs_path": (
+            preferred.attrib.get("Value") if preferred is not None else None
+        ),
     }
 
 

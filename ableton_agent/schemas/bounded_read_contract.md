@@ -82,11 +82,21 @@ error so command-line callers return exit code `1`.
 - `identity`: original parameter index, stable Live ID, and name
 - `metadata`: minimum, maximum, and quantized state
 - `internal_value`: exact Live parameter value
-- `display_value`: Live's `str_for_value` output for the current value
+- `display_value`: requests the shared display bundle: legacy formatted
+  `display_value`, explicit `display_text`, direct current
+  `display_numeric_value`, and `display_value_source`
 - `enum_values`: bounded labels for a quantized parameter
+
+When a bounded parameter request omits `limit`, the Parameter adapter uses a
+conservative default of `4`. Python sends that value explicitly so the request
+is inspectable, while direct Hub requests with `read: {}` use the same adapter
+default. Callers may still supply any valid `limit` from `1` through `32`.
+`cursor`/legacy `offset` continues to default to `0`.
 
 Internal values remain the source of truth. User-facing reports of a modified
 parameter should preserve that value and request `display_value` when available.
+The full current-value, dry-run-target, and old-Live fallback behavior is
+defined in `parameter_value_display_contract.md`.
 
 ## Track Projection
 

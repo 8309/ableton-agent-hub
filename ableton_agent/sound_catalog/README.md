@@ -72,8 +72,10 @@ python -m ableton_bridge.sound_catalog build-db
   type, device chain, top-level macros, nested macro groups, FileRefs, preview
   paths where present, and resolved local resource links.
 
-Default roots are local C-drive Ableton and plugin directories. External drives
-are excluded unless the user explicitly supplies them.
+The default Factory Packs root follows the newest Ableton Live `Library.cfg`
+`PreferredFactoryPacksInstallationPath`. User Library and plugin fallbacks stay
+on the local C drive. Other external roots are excluded unless the user
+explicitly supplies them.
 
 After a refresh, compare the generated Pack count with Live's Browser and
 spot-check newly installed Packs. An install still in progress can produce a

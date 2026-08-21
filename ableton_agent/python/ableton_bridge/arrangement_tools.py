@@ -93,12 +93,15 @@ def main() -> int:
     parser.add_argument(
         "--action",
         default="scan_region",
-        choices=["scan_region", "clear_region", "copy_region", "duplicate_region", "rename_region_clip"],
+        choices=["scan_region", "clear_region", "copy_region", "duplicate_region", "rename_region_clip", "move_audio_clip"],
     )
     parser.add_argument("--start", type=float, default=0.0, help="Arrangement beat where the region starts")
     parser.add_argument("--length", type=float, default=32.0, help="Beat length to inspect")
     parser.add_argument("--track", help="Optional track name or zero-based track index")
     parser.add_argument("--target-start", type=float, dest="target_start", help="Destination beat for copy/duplicate actions")
+    parser.add_argument("--track-id", type=int, dest="track_id", help="Stable ordinary track ID for move_audio_clip")
+    parser.add_argument("--clip-id", type=int, dest="clip_id", help="Stable Arrangement clip ID for move_audio_clip")
+    parser.add_argument("--plan-token", dest="plan_token", help="Token returned by the latest move_audio_clip dry-run")
     parser.add_argument("--replace", action="store_true", help="Allow copy/duplicate to replace matching target clips")
     parser.add_argument("--include-partial", action="store_true", help="Allow clear_region to affect whole clips that only partially overlap the region")
     parser.add_argument("--name", help="New clip name for rename_region_clip")
@@ -124,6 +127,9 @@ def main() -> int:
             length=args.length,
             track=int(args.track) if args.track and args.track.isdigit() else args.track,
             target_start=args.target_start,
+            track_id=args.track_id,
+            clip_id=args.clip_id,
+            plan_token=args.plan_token,
             replace=args.replace if args.replace else None,
             include_partial=args.include_partial if args.include_partial else None,
             name=args.name,
