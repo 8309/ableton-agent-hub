@@ -3787,6 +3787,11 @@ class BoundedReadDiagnosticsTest(unittest.TestCase):
                 path, args = decode_message(packet)
                 FakeSocket.replies = [
                     encode_message(path, ["other-request", json.dumps({"ok": True})]),
+                    encode_message(path, [args[0], json.dumps({"ok": True, "request_id": "wrong-json-id"})]),
+                    encode_message(path, [args[0], json.dumps({"kind": "progress"})]),
+                    encode_message("/parameter_summary_progress", [args[0], json.dumps({
+                        "kind": "progress", "checkpoint": {"stage": "wrong-page", "cursor": 4}
+                    })]),
                     encode_message("/parameter_summary_progress", [args[0], json.dumps({
                         "kind": "progress", "checkpoint": {"stage": "page_started"}
                     })]),
@@ -4139,6 +4144,35 @@ class RecommenderTest(unittest.TestCase):
         self.assertEqual(len(calls[0]), 2)
         self.assertEqual(result["summary"]["successful_batch_count"], 1)
 
+    def test_execute_recommendations_stops_and_reports_unexecuted_batches(self) -> None:
+        from ableton_bridge.recommender import execute_recommendations
+
+        calls = []
+
+        def fail_first(payload, *, commit, timeout):
+            calls.append(len(payload))
+            return {"ok": False, "error": "simulated failure"}
+
+        actions = [
+            {"type": "set_mix", "track": "Bass", "field": "volume", "value": 0.5}
+            for _index in range(10)
+        ]
+        result = execute_recommendations(
+            {"actions": actions},
+            action_types={"set_mix"},
+            runners={
+                "insert_devices": lambda *_args, **_kwargs: {},
+                "insert_effects": lambda *_args, **_kwargs: {},
+                "set_mix": fail_first,
+                "set_parameters": lambda *_args, **_kwargs: {},
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(calls, [8])
+        self.assertEqual(result["completed_batch_numbers"], [1])
+        self.assertEqual(result["unexecuted_batch_numbers"], [2])
+
     def test_summarize_execution_plan_lists_batch_tracks(self) -> None:
         from ableton_bridge.recommender import build_execution_plan, summarize_execution_plan
 
@@ -4272,7 +4306,7 @@ class MixerControlClientTest(unittest.TestCase):
             {"track": "Bass", "field": "send", "send": "A", "value": 0.25},
         ]
         with patch("ableton_bridge.mixer_control.socket.socket", side_effect=lambda *_args: FakeSocket()):
-            result = set_mix(changes, timeout=1.0)
+            result = set_mix(changes, commit=False, timeout=1.0)
 
         self.assertTrue(result["dry_run"])
         self.assertFalse(result["applied"])
@@ -4330,6 +4364,7 @@ class MixerControlClientTest(unittest.TestCase):
         with patch("ableton_bridge.mixer_control.socket.socket", side_effect=lambda *_args: FakeSocket()):
             result = set_mix(
                 [{"track": "5-Sax Lead", "field": "send", "send": "A", "value": 0.04}],
+                commit=False,
                 value_display="ui",
                 timeout=1.0,
             )
@@ -4489,7 +4524,7 @@ class MultiParameterControlClientTest(unittest.TestCase):
                 return FakeSocket.reply, ("127.0.0.1", 7400)
 
         with patch("ableton_bridge.multi_parameter_control.socket.socket", side_effect=lambda *_args: FakeSocket()):
-            result = set_parameters([change], timeout=1.0)
+            result = set_parameters([change], commit=False, timeout=1.0)
 
         self.assertEqual(result["results"][0]["target_kind"], "nested_device_parameter")
         self.assertTrue(result["results"][0]["parameter"]["is_enabled"])
@@ -4549,7 +4584,7 @@ class MultiParameterControlClientTest(unittest.TestCase):
             {"track": "2-Garage Kit", "parameter": "DrBuss Amount", "value": 12},
         ]
         with patch("ableton_bridge.multi_parameter_control.socket.socket", side_effect=lambda *_args: FakeSocket()):
-            result = set_parameters(changes, timeout=1.0)
+            result = set_parameters(changes, commit=False, timeout=1.0)
 
         self.assertTrue(result["dry_run"])
         self.assertFalse(result["applied"])
@@ -4606,6 +4641,7 @@ class MultiParameterControlClientTest(unittest.TestCase):
         with patch("ableton_bridge.multi_parameter_control.socket.socket", side_effect=lambda *_args: FakeSocket()):
             result = set_parameters(
                 [{"track": "5-Sax Lead", "device": "Reverb", "parameter": "Dry/Wet", "value": 0.08}],
+                commit=False,
                 value_display="internal",
                 timeout=1.0,
             )
@@ -4769,7 +4805,7 @@ class DevicePackageTest(unittest.TestCase):
     def test_builds_hub_amxd_with_common_agent_modules(self) -> None:
         sys.path.insert(0, str(ROOT / "ableton_agent"))
         from build_hub_device import extract_patch_json
-        from build_hub_device import build_hub_amxd
+        from build_hub_device import build_hub_amxd, hub_build_version
 
         with tempfile.TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "Ableton Agent Hub.amxd"
@@ -4779,6 +4815,16 @@ class DevicePackageTest(unittest.TestCase):
             copied_device_tree = (Path(temp_dir) / "ableton_agent_device_tree.js").exists()
             copied_value_display = (Path(temp_dir) / "ableton_agent_value_display.js").exists()
             copied_parameter_diagnostics = (Path(temp_dir) / "ableton_agent_parameter_diagnostics.js").exists()
+            version_box = next(item["box"] for item in patch["patcher"]["boxes"]
+                               if item["box"]["id"] == "obj-version")
+            self.assertEqual(version_box["text"], "Version: " + hub_build_version())
+            self.assertRegex(version_box["text"], r"^Version: dev-[0-9a-f]{12}$")
+            self.assertEqual(version_box["presentation"], 0)
+            dashboard = next(box["box"] for box in patch["patcher"]["boxes"]
+                             if box["box"]["id"] == "obj-dashboard")
+            self.assertEqual(dashboard["presentation"], 1)
+            self.assertLessEqual(version_box["presentation_rect"][1] +
+                                 version_box["presentation_rect"][3], patch["patcher"]["openrect"][3])
 
         self.assertEqual(output.name, "Ableton Agent Hub.amxd")
         texts = {
@@ -4846,7 +4892,7 @@ class DevicePackageTest(unittest.TestCase):
         self.assertIn('include("ableton_agent_value_display.js")', multi_parameter_source)
         self.assertIn("AbletonAgentValueDisplay.attachTarget", multi_parameter_source)
         self.assertIn("Parameter is disabled in Live and may be Macro-controlled", multi_parameter_source)
-        self.assertIn("Commit to a nested device requires track_id, device_id, and parameter_id", multi_parameter_source)
+        self.assertIn("Apply to a nested device requires stable track_id, device_id, and parameter_id", multi_parameter_source)
         self.assertIn("device_id: resolved.device_id", multi_parameter_source)
         device_tree_source = (ROOT / "ableton_agent" / "max" / "ableton_agent_device_tree.js").read_text(encoding="utf-8")
         self.assertIn("function findInDeviceIds", device_tree_source)
@@ -4993,7 +5039,7 @@ class DevicePackageTest(unittest.TestCase):
     def test_device_chain_uses_safe_templates_and_insert_device(self) -> None:
         source = (ROOT / "ableton_agent" / "max" / "ableton_agent_device_chain.js").read_text()
 
-        self.assertIn('var allowed = ["list_templates", "scan_recursive", "apply_template", "apply_parameter_preset"];', source)
+        self.assertIn('var allowed = ["list_templates", "scan_recursive", "scan_children", "apply_template", "apply_parameter_preset"];', source)
         self.assertIn('include("ableton_agent_device_tree.js")', source)
         self.assertIn("function scanRecursive(payload)", source)
         self.assertIn("payload.root_device_id", source)
@@ -5034,7 +5080,7 @@ class DevicePackageTest(unittest.TestCase):
         self.assertIn("Return/Main meter reads require an explicit track_id", source)
         self.assertIn("no continuous polling was started", source)
 
-    def test_special_track_writes_use_stable_ids_and_readback(self) -> None:
+    def test_special_track_writes_use_stable_ids_or_same_request_guards_and_readback(self) -> None:
         inserter = (ROOT / "ableton_agent" / "max" / "ableton_agent_inserter.js").read_text()
         mixer = (ROOT / "ableton_agent" / "max" / "ableton_agent_mixer_control.js").read_text()
         parameters = (ROOT / "ableton_agent" / "max" / "ableton_agent_multi_parameter_control.js").read_text()
@@ -5044,9 +5090,11 @@ class DevicePackageTest(unittest.TestCase):
         self.assertIn("created_device_id", inserter)
         self.assertIn("verified_inserted", inserter)
         self.assertNotIn("resolveEffectTrack(plans[index].track_index)", inserter)
-        self.assertIn("Commit to Return/Main requires track_id", mixer)
+        self.assertIn("expected_before", mixer)
+        self.assertIn("undo_receipt", mixer)
         self.assertIn("track_id: resolved.track.id", mixer)
-        self.assertIn("Commit to Return/Main requires track_id", parameters)
+        self.assertIn("expected_before", parameters)
+        self.assertIn("undo_receipt", parameters)
         self.assertIn("track_id: resolved.track.id", parameters)
 
     def test_sample_confirm_reads_simpler_and_reports_drum_rack_limits(self) -> None:
@@ -5430,4 +5478,3 @@ class HttpProtocolTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -1,4 +1,129 @@
 autowatch = 1;
+include("ableton_agent_health.js");
+include("ableton_agent_creative_control.js");
+function prepareCreativeTrackDelete(p, s, beforeIds) {
+    if ((p.section || "track") !== "track" || p.name !== undefined || p.color !== undefined) {
+        throw new Error("Delete accepts an ordinary track_id only; no rename/color");
+    }
+    var t = AgentCreative.track(p);
+    if (beforeIds.length <= 1) { throw new Error("Cannot delete the last ordinary track"); }
+    var foldable = Number(AgentCreative.value(t.api.get("is_foldable")));
+    if (foldable !== 0) { throw new Error("Group tracks or unknown track types cannot be deleted by this tool"); }
+    var returns = AgentCreative.ids(s.get("return_tracks"));
+    var main = AgentCreative.ids(s.get("master_track"));
+    var allTracks = beforeIds.concat(returns, main);
+    // Resolve the device's ancestry, including a Hub nested inside Rack chains.
+    var host = new LiveAPI(function () {}, "this_device"), seen = [], hostTrack = 0;
+    for (var depth = 0; depth < 32; depth += 1) {
+        var hid = Number(host.id);
+        if (!hid || seen.indexOf(hid) >= 0) { break; }
+        if (allTracks.indexOf(hid) >= 0) { hostTrack = hid; break; }
+        seen.push(hid);
+        var parents = AgentCreative.ids(host.get("canonical_parent"));
+        if (parents.length !== 1 || !parents[0]) { break; }
+        host = AgentCreative.api(parents[0]);
+    }
+    if (!hostTrack) { throw new Error("Cannot establish Hub host track; deletion refused"); }
+    if (hostTrack === t.id) { throw new Error("Cannot delete the track hosting this Hub"); }
+    var grouped = Number(AgentCreative.value(t.api.get("is_grouped")));
+    if (grouped !== 0 && grouped !== 1) { throw new Error("Cannot establish target group membership"); }
+    var parent = grouped ? AgentCreative.ids(t.api.get("group_track"))[0] : 0;
+    if (grouped && !parent) { throw new Error("Cannot establish target parent group"); }
+    var deviceIds = AgentCreative.ids(t.api.get("devices"));
+    var arrangementIds = AgentCreative.ids(t.api.get("arrangement_clips"));
+    var slots = AgentCreative.ids(t.api.get("clip_slots"));
+    if (deviceIds.length > 64 || arrangementIds.length > 128 || slots.length > 256) {
+        throw new Error("Deletion impact exceeds bounded inspection limits; use manual Live deletion");
+    }
+    var started = new Date().getTime();
+    function budget() {
+        if (new Date().getTime() - started > 1500) {
+            throw new Error("Deletion impact budget exceeded; no token issued");
+        }
+    }
+    var devices = [], clips = [], i;
+    for (i = 0; i < deviceIds.length; i += 1) {
+        budget();
+        var d = AgentCreative.api(deviceIds[i]);
+        devices.push({device_id:deviceIds[i],name:String(AgentCreative.value(d.get("name")))});
+    }
+    function addClip(id, location, slotIndex) {
+        budget();
+        var c = AgentCreative.api(id);
+        var record = {clip_id:id,location:location,name:String(AgentCreative.value(c.get("name")))};
+        if (location === "arrangement") {
+            record.start = Number(AgentCreative.value(c.get("start_time")));
+            record.end = Number(AgentCreative.value(c.get("end_time")));
+            if (!isFinite(record.start) || !isFinite(record.end)) { throw new Error("Invalid Clip impact range"); }
+        } else { record.slot_index = slotIndex; }
+        clips.push(record);
+    }
+    for (i = 0; i < arrangementIds.length; i += 1) { addClip(arrangementIds[i], "arrangement", null); }
+    for (i = 0; i < slots.length; i += 1) {
+        budget();
+        var slot = AgentCreative.api(slots[i]);
+        var hasClip = Number(AgentCreative.value(slot.get("has_clip")));
+        if (hasClip !== 0 && hasClip !== 1) { throw new Error("Cannot read Session slot occupancy"); }
+        if (hasClip) {
+            var clipIds = AgentCreative.ids(slot.get("clip"));
+            if (clipIds.length !== 1 || !clipIds[0]) { throw new Error("Cannot resolve Session Clip"); }
+            addClip(clipIds[0], "session", i);
+        }
+    }
+    var expected = beforeIds.filter(function (id) { return id !== t.id; });
+    var plan = {action:"delete_track",track_id:t.id,track_name:t.name,track_index:t.index,
+        parent_group_id:parent,host_track_id:hostTrack,before_track_ids:beforeIds,after_track_ids:expected,
+        direct_devices:devices,clips:clips,direct_device_count:devices.length,
+        arrangement_clip_count:arrangementIds.length,session_clip_count:clips.length-arrangementIds.length,
+        deletion_scope:"Entire track including nested devices, Clips, take lanes and automation",
+        warnings:["Not a content backup: nested parameters, notes, take lanes and automation are not enumerated or guarded; routing may be affected."]};
+    return {state:[plan,slots,returns,main],plan:plan,apply:function () {
+        var current = AgentCreative.ids(s.get("tracks"));
+        if (JSON.stringify(current) !== JSON.stringify(beforeIds) || current[t.index] !== t.id) {
+            throw new Error("Track order changed before deletion; inspect again");
+        }
+        s.call("delete_track", t.index);
+        var after = AgentCreative.ids(s.get("tracks"));
+        if (JSON.stringify(after) !== JSON.stringify(expected) ||
+            JSON.stringify(AgentCreative.ids(s.get("return_tracks"))) !== JSON.stringify(returns) ||
+            JSON.stringify(AgentCreative.ids(s.get("master_track"))) !== JSON.stringify(main)) {
+            throw new Error("Track deletion readback mismatch; inspect current Set before retrying");
+        }
+        return {deleted:true,track_id:t.id,track_name:t.name,before_track_ids:beforeIds,
+            after_track_ids:after,verified:true,verification_scope:"Target absent; exact remaining track order and Return/Main IDs unchanged",
+            recovery:"Use Live Undo; no automatic content restore or retry"};
+    }};
+}
+
+function prepareCreativeTrackManagement(p) {
+    var s=AgentCreative.song(), ids=AgentCreative.ids(s.get("tracks"));
+    if (p.action === "delete_track") { return prepareCreativeTrackDelete(p, s, ids); }
+    var create=p.action==="create_audio_track" || p.action==="create_midi_track";
+    if(!create && ["rename_track","color_track"].indexOf(p.action)<0) { throw new Error("Unsupported safe track action"); }
+    var t=create?null:AgentCreative.track(p);
+    var state=create?ids:[t.id,t.name,AgentCreative.value(t.api.get("color"))];
+    if(p.color!==undefined && (typeof p.color!=="number" || p.color<0 || p.color>16777215 || Math.floor(p.color)!==p.color)) { throw new Error("Invalid RGB color"); }
+    return {state:state,plan:{action:p.action,track_id:p.track_id,name:p.name,color:p.color,append_index:create?ids.length:null},apply:function() {
+        if(create) {
+            s.call(p.action,-1);
+            var added=AgentCreative.ids(s.get("tracks")).filter(function(x){return ids.indexOf(x)<0;});
+            if(added.length!==1) { throw new Error("Expected one new Track"); }
+            t=AgentCreative.track({track_id:added[0]});
+        }
+        if(p.name) { t.api.set("name",p.name); }
+        if(p.color!==undefined) { t.api.set("color",p.color); }
+        var name=String(AgentCreative.value(t.api.get("name"))), color=Number(AgentCreative.value(t.api.get("color")));
+        if(p.name && name!==p.name) { throw new Error("Track name readback mismatch"); }
+        if(!isFinite(color) || color<0 || color>16777215 || Math.floor(color)!==color) { throw new Error("Invalid Track color readback"); }
+        var audio=Boolean(Number(AgentCreative.value(t.api.get("has_audio_input"))));
+        if(create && audio!==(p.action==="create_audio_track")) { throw new Error("Created Track type mismatch"); }
+        // Live chooses the nearest palette entry when given an arbitrary RGB value.
+        return {track_id:t.id,name:name,color:color,has_audio_input:audio,verified:true,
+            requested_color:p.color===undefined?null:p.color,
+            color_exact_match:p.color===undefined?null:color===p.color,
+            color_policy:p.color===undefined?null:"nearest_live_palette"};
+    }};
+}
 inlets = 1;
 outlets = 1;
 
@@ -1114,11 +1239,34 @@ function structuralPlan(action, payload) {
 }
 
 
+var lookupGeneration = String(Date.now()) + "-" + String(Math.random());
+
+function lookupRevision() {
+    var song = new LiveAPI(function () {}, "live_set");
+    // Collection-only probe: no Return routing or per-track getters.
+    return lookupGeneration + ":" + String(song.id) + ":" +
+        AbletonAgentReadCore.collectionToken(idsFrom(song.get("tracks"))) + ":" +
+        AbletonAgentReadCore.collectionToken(idsFrom(song.get("return_tracks"))) + ":" +
+        AbletonAgentReadCore.collectionToken(idsFrom(song.get("master_track")));
+}
+
 function handleTrackManagement(requestId, payloadText, mode) {
     var dryRun = String(mode || "dry_run") !== "commit";
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
+        if (payload.action === "_module_health") {
+            AgentHealth.reply(requestId, "tracks", mode); return;
+        }
+        if (payload.mcp_safe !== undefined) {
+            AgentCreative.handle("track_management", requestId, payload, mode, prepareCreativeTrackManagement, agentCreativeEmit);
+            return;
+        }
         var action = String(payload.action || "scan_tracks");
+        if (action === "lookup_revision") {
+            if (!dryRun) { throw new Error("lookup_revision is read-only"); }
+            outlet(0, [requestId, JSON.stringify({ok: true, dry_run: true, revision: lookupRevision()})]);
+            return;
+        }
         var allowed = ["scan_tracks", "scan_hierarchy", "scan_special_tracks", "create_midi_track", "create_audio_track", "create_return_track", "delete_return_track", "rename_track", "color_track", "delete_empty_track", "set_group_properties", "create_group", "move_track_to_group", "move_track_out_of_group", "reorder_track", "plan_groups"];
         if (allowed.indexOf(action) < 0) {
             throw new Error("Unsupported track_management action: " + action);

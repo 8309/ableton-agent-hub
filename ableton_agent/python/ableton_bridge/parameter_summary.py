@@ -87,7 +87,10 @@ def _inspection_payload(
     projection: list[str] | None = None,
     budget_ms: int = 1000,
     expected_collection_token: str | None = None,
+    trace_level: str = "none",
 ) -> dict[str, Any]:
+    if trace_level not in {"none", "page", "parameter", "field"}:
+        raise ParameterSummaryError("trace_level must be none, page, parameter, or field")
     if action not in {"list_parameters", "search_parameters"}:
         raise ParameterSummaryError("action must be list_parameters or search_parameters")
     if section not in {"track", "return", "main", "master"}:
@@ -109,7 +112,7 @@ def _inspection_payload(
             projection.append("display_value")
         if include_enum_values:
             projection.append("enum_values")
-    allowed = {"identity", "metadata", "internal_value", "display_value", "enum_values"}
+    allowed = {"identity", "metadata", "internal_value", "display_value", "enum_values", "automation_state"}
     if not projection or any(field not in allowed for field in projection):
         raise ParameterSummaryError("projection contains an unsupported parameter field")
 
@@ -129,6 +132,8 @@ def _inspection_payload(
             "expected_collection_token": expected_collection_token,
         },
     }
+    if trace_level != "none":
+        payload["trace_level"] = trace_level
     for key, value in {
         "track_id": track_id,
         "track_name": track_name,
@@ -150,6 +155,7 @@ def read_device_parameter_page(
     command_port: int = 7400,
     reply_port: int = 7401,
     timeout: float = 5.0,
+    on_progress: Any = None,
     **inspection: Any,
 ) -> dict[str, Any]:
     payload = _inspection_payload(**inspection)
@@ -160,6 +166,7 @@ def read_device_parameter_page(
         command_port=command_port,
         reply_port=reply_port,
         timeout=timeout,
+        **_progress_options(payload, on_progress),
     )
 
 
@@ -171,6 +178,7 @@ def inspect_device_parameters(
     total_timeout: float = 30.0,
     page_timeout: float | None = None,
     on_page: Any = None,
+    on_progress: Any = None,
     host: str = "127.0.0.1",
     command_port: int = 7400,
     reply_port: int = 7401,
@@ -186,6 +194,7 @@ def inspect_device_parameters(
             command_port=command_port,
             reply_port=reply_port,
             timeout=timeout,
+            **_progress_options(payload, on_progress),
         )
 
     def fetch(page_payload: dict[str, Any], current_timeout: float) -> dict[str, Any]:
@@ -196,6 +205,7 @@ def inspect_device_parameters(
             command_port=command_port,
             reply_port=reply_port,
             timeout=current_timeout,
+            **_progress_options(page_payload, on_progress),
         )
 
     result = collect_pages(
@@ -215,6 +225,12 @@ def inspect_device_parameters(
     return result
 
 
+def _progress_options(payload: dict[str, Any], callback: Any) -> dict[str, Any]:
+    if payload.get("trace_level", "none") == "none":
+        return {}
+    return {"progress_route": "/parameter_summary_progress", "on_progress": callback}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Read lightweight all-track parameter summary")
     parser.add_argument("--action", choices=["summary", "list_parameters", "search_parameters"], default="summary")
@@ -229,6 +245,7 @@ def main() -> int:
     parser.add_argument("--device-index", type=int)
     parser.add_argument("--query")
     parser.add_argument("--offset", type=int, default=0)
+    parser.add_argument("--trace-level", choices=["none", "page", "parameter", "field"], default="none")
     parser.add_argument(
         "--limit",
         type=int,
@@ -237,7 +254,7 @@ def main() -> int:
     )
     parser.add_argument("--include-display-values", action="store_true")
     parser.add_argument("--include-enum-values", action="store_true")
-    parser.add_argument("--projection", action="append", choices=["identity", "metadata", "internal_value", "display_value", "enum_values"])
+    parser.add_argument("--projection", action="append", choices=["identity", "metadata", "internal_value", "display_value", "enum_values", "automation_state"])
     parser.add_argument("--budget-ms", type=int, default=1000)
     parser.add_argument("--single-page", action="store_true")
     parser.add_argument("--max-pages", type=int, default=32)
@@ -272,6 +289,7 @@ def main() -> int:
                 device_index=args.device_index,
                 query=args.query,
                 offset=args.offset,
+                trace_level=args.trace_level,
                 limit=args.limit,
                 include_display_values=args.include_display_values,
                 include_enum_values=args.include_enum_values,

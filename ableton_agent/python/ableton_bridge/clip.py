@@ -8,6 +8,7 @@ import uuid
 from typing import Any
 
 from .osc import OscDecodeError, decode_message, encode_message
+from .reply_port_lock import reply_port_lock
 
 
 class ClipError(RuntimeError):
@@ -27,7 +28,7 @@ def read_clip(
     request_id = uuid.uuid4().hex
     packet = encode_message("/clip", [request_id])
 
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
+    with reply_port_lock(reply_port, timeout=timeout), socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
         reply_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         reply_socket.bind((host, reply_port))
         reply_socket.settimeout(min(timeout, 0.2))

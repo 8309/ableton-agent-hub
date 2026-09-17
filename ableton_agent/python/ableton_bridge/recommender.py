@@ -197,6 +197,8 @@ def execute_recommendations(
     commit: bool = False,
     timeout: float = 5.0,
     batch_numbers: set[int] | None = None,
+    stop_on_error: bool = True,
+    max_changes: int = 64,
     runners: dict[str, Callable[..., dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     actions = recommendation.get("actions", [])
@@ -210,6 +212,13 @@ def execute_recommendations(
         "set_parameters": set_parameters,
     }
     selected_batches = _select_batches(plan["batches"], batch_numbers)
+    selected_change_count = sum(int(batch.get("count", 0)) for batch in selected_batches)
+    if max_changes < 1 or max_changes > 512:
+        raise RecommenderError("max_changes must be 1..512")
+    if selected_change_count > max_changes:
+        raise RecommenderError(
+            f"selected execution contains {selected_change_count} changes; max_changes is {max_changes}"
+        )
     results: list[dict[str, Any]] = []
 
     for batch in selected_batches:
@@ -234,14 +243,25 @@ def execute_recommendations(
                     "hint": _execution_hint(batch_type),
                 }
             )
+            if stop_on_error:
+                break
             continue
-        results.append({"type": batch_type, "ok": True, "result": result})
+        batch_ok = result.get("ok") is not False
+        results.append({"type": batch_type, "ok": batch_ok, "result": result})
+        if not batch_ok and stop_on_error:
+            break
+
+    unexecuted_batches = selected_batches[len(results) :]
 
     return {
         "ok": all(result["ok"] for result in results),
         "mode": "commit" if commit else "dry_run",
         "plan": plan,
         "selected_batch_numbers": [batch["batch_number"] for batch in selected_batches],
+        "completed_batch_numbers": [batch["batch_number"] for batch in selected_batches[: len(results)]],
+        "unexecuted_batch_numbers": [batch["batch_number"] for batch in unexecuted_batches],
+        "stop_on_error": stop_on_error,
+        "max_changes": max_changes,
         "results": results,
         "summary": summarize_execution(plan, results, selected_batches),
     }
@@ -494,6 +514,8 @@ def main() -> int:
         help="Limit execution plan to types: insert_device, insert_effect, set_mix, set_parameter",
     )
     parser.add_argument("--timeout", type=float, default=8.0)
+    parser.add_argument("--max-changes", type=int, default=64)
+    parser.add_argument("--continue-on-error", action="store_true", help="Continue later bounded batches after one fails")
     args = parser.parse_args()
 
     try:
@@ -530,6 +552,8 @@ def main() -> int:
                 commit=args.commit,
                 timeout=args.timeout,
                 batch_numbers=batch_numbers,
+                stop_on_error=not args.continue_on_error,
+                max_changes=args.max_changes,
             )
     except (RecommenderError, StyleProfileError, ParameterSummaryError, json.JSONDecodeError, OSError) as error:
         print(json.dumps({"ok": False, "error": str(error)}, indent=2), flush=True)

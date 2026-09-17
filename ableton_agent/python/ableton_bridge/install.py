@@ -10,6 +10,12 @@ from typing import Any
 
 HUB_FILE_NAMES = (
     "Ableton Agent Hub.amxd",
+    "hub_build_manifest.json",
+    "ableton_agent_dashboard.js",
+    "ableton_agent_status_panel.js",
+    "ableton_agent_health.js",
+    "ableton_agent_creative_control.js",
+    "ableton_agent_ui_input.js",
     "ableton_agent_read_core.js",
     "ableton_agent_snapshot.js",
     "ableton_agent_parameter_summary.js",

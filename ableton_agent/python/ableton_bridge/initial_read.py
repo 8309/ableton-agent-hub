@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .bounded_read import BoundedReadTimeoutError
+from .als_bundle import ALL_SECTIONS as SAVED_ALS_SECTIONS, read_saved_set
+from .als_verify import compare_als_snapshot_to_hub
 from .clip_note_tools import clip_note_tools_bounded
 from .locator import locator
 from .mixer_control import set_mix
@@ -161,6 +163,10 @@ def _build_summary(context: dict[str, Any]) -> dict[str, Any]:
     main = [item for item in tracks if item.get("section") == "main"]
     midi_clips = [item for item in clips if item.get("clip_type") == "midi"]
     audio_clips = [item for item in clips if item.get("clip_type") == "audio"]
+    saved = context.get("saved_als") or {}
+    saved_summary = saved.get("summary", {}) if isinstance(saved, dict) else {}
+    comparison = context.get("saved_live_comparison") or {}
+    comparisons = comparison.get("comparisons", {}) if isinstance(comparison, dict) else {}
     return {
         "status": context.get("status"),
         "depth": context.get("depth"),
@@ -185,7 +191,30 @@ def _build_summary(context: dict[str, Any]) -> dict[str, Any]:
         "stages": context.get("stages", {}),
         "errors": context.get("errors", []),
         "warnings": context.get("warnings", []),
+        "saved_als_status": saved.get("status", "not_requested") if isinstance(saved, dict) else "not_requested",
+        "saved_als_path": (saved.get("source") or {}).get("path") if isinstance(saved, dict) else None,
+        "saved_als_summary": saved_summary,
+        "saved_live_comparison_status": comparison.get("overall_status") if isinstance(comparison, dict) else None,
+        "saved_live_comparison_fields": {
+            name: item.get("status")
+            for name, item in comparisons.items()
+            if isinstance(item, dict)
+        },
         "total_elapsed_ms": context.get("total_elapsed_ms"),
+    }
+
+
+def _live_verification_snapshot(context: dict[str, Any]) -> dict[str, Any]:
+    errors: dict[str, str] = {}
+    for item in context.get("errors", []):
+        if not isinstance(item, dict) or not item.get("stage"):
+            continue
+        errors.setdefault(str(item["stage"]), str(item.get("error", "unknown error")))
+    return {
+        "tempo": context.get("set", {}).get("tempo"),
+        "locators": context.get("set", {}).get("locators", []),
+        "tracks": context.get("tracks", []),
+        "errors": errors,
     }
 
 
@@ -202,6 +231,10 @@ def initial_read(
     timeout: float = 5.0,
     ping_timeout: float = 1.5,
     total_timeout: float = 30.0,
+    als_path: str | None = None,
+    saved_sections: set[str] | None = None,
+    include_saved_device_parameters: bool = False,
+    include_saved_midi_notes: bool = False,
     on_progress: ProgressCallback | None = None,
     on_quick_ready: QuickReadyCallback | None = None,
 ) -> dict[str, Any]:
@@ -213,6 +246,11 @@ def initial_read(
         raise InitialReadError("note_window_beats must be 1..64")
     if ping_timeout <= 0:
         raise InitialReadError("ping_timeout must be greater than zero")
+    if saved_sections is not None and not saved_sections.issubset(SAVED_ALS_SECTIONS):
+        unknown = saved_sections - SAVED_ALS_SECTIONS
+        raise InitialReadError(
+            f"saved_sections contains unsupported values: {', '.join(sorted(unknown))}"
+        )
 
     started = time.monotonic()
     context: dict[str, Any] = {
@@ -231,6 +269,15 @@ def initial_read(
         "stages": {},
         "errors": [],
         "warnings": [],
+        "saved_als": {
+            "status": "not_requested",
+            "read_only": True,
+            "source_kind": "saved_als",
+        },
+        "sources": {
+            "live": {"kind": "hub_live_set", "status": "in_progress"},
+            "saved_als": {"kind": "saved_als", "status": "not_requested"},
+        },
     }
 
     def progress(stage: str, **details: Any) -> None:
@@ -323,6 +370,64 @@ def initial_read(
     if metadata:
         context["clips"] = [_clip_record(item) for item in metadata.get("items", [])]
         context["warnings"].extend(metadata.get("warnings", []))
+
+    if als_path:
+        saved_result = stage(
+            "saved_als",
+            lambda: read_saved_set(
+                als_path,
+                sections=saved_sections,
+                include_device_parameters=include_saved_device_parameters,
+                include_midi_notes=include_saved_midi_notes,
+                max_uncompressed_bytes=128 * 1024 * 1024,
+            ),
+        )
+        if saved_result:
+            saved_result = {"status": "complete", **saved_result}
+            context["saved_als"] = saved_result
+            context["sources"]["saved_als"] = {
+                "kind": "saved_als",
+                "status": "complete",
+                "path": saved_result.get("source", {}).get("path"),
+                "file_token": saved_result.get("source", {}).get("file_token"),
+                "read_only": True,
+            }
+            context["warnings"].extend(saved_result.get("warnings", []))
+            try:
+                comparison = compare_als_snapshot_to_hub(
+                    saved_result.get("snapshot", {}),
+                    _live_verification_snapshot(context),
+                )
+                context["saved_live_comparison"] = comparison
+                context["sources"]["comparison"] = {
+                    "status": comparison.get("overall_status"),
+                    "scope": comparison.get("verified_scope", []),
+                }
+            except Exception as exc:
+                context["saved_live_comparison"] = {
+                    "ok": False,
+                    "overall_status": "partial",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+                context["warnings"].append(
+                    {"stage": "saved_live_comparison", "error": str(exc)}
+                )
+        else:
+            context["saved_als"] = {
+                "status": "failed",
+                "read_only": True,
+                "source_kind": "saved_als",
+            }
+            context["sources"]["saved_als"] = {
+                "kind": "saved_als",
+                "status": "failed",
+                "read_only": True,
+            }
+    context["sources"]["live"] = {
+        "kind": "hub_live_set",
+        "status": context.get("status"),
+        "read_only": True,
+    }
 
     quick_context = copy.deepcopy(context)
     quick_context["depth"] = "quick"
@@ -458,6 +563,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=float, default=5.0)
     parser.add_argument("--ping-timeout", type=float, default=1.5)
     parser.add_argument("--total-timeout", type=float, default=30.0)
+    parser.add_argument(
+        "--als-path",
+        type=Path,
+        help="Optional explicit saved .als path to add a read-only static source layer",
+    )
+    parser.add_argument(
+        "--saved-sections",
+        default=None,
+        help="Comma-separated saved sections: tracks,scenes,audio_clips,automation,grooves,midi",
+    )
+    parser.add_argument("--include-saved-device-parameters", action="store_true")
+    parser.add_argument("--include-saved-midi-notes", action="store_true")
     return parser
 
 
@@ -504,6 +621,14 @@ def main(argv: list[str] | None = None) -> int:
             timeout=args.timeout,
             ping_timeout=args.ping_timeout,
             total_timeout=args.total_timeout,
+            als_path=str(args.als_path) if args.als_path else None,
+            saved_sections=(
+                {item.strip() for item in args.saved_sections.split(",") if item.strip()}
+                if args.saved_sections is not None
+                else None
+            ),
+            include_saved_device_parameters=args.include_saved_device_parameters,
+            include_saved_midi_notes=args.include_saved_midi_notes,
             on_progress=show_progress,
             on_quick_ready=quick_ready,
         )

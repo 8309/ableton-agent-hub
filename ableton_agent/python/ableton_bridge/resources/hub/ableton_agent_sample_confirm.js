@@ -1,4 +1,13 @@
 autowatch = 1;
+include("ableton_agent_creative_control.js");
+function prepareCreativeSampleConfirm(p) {
+    var t=AgentCreative.track(p), d=AgentCreative.device(t,p.device_id);
+    if(t.section!=="track") { throw new Error("Sample confirmation requires ordinary track"); }
+    var args={track_index:t.index,device_index:d.index,target:p.target,intended_path:p.intended_path};
+    if(p.pad_note!==undefined) { args.pad_note=p.pad_note; }
+    var result=confirmLoadedSample(args);
+    return {read_only:true,state:[],plan:result};
+}
 inlets = 1;
 outlets = 1;
 
@@ -459,6 +468,10 @@ function handleSampleConfirm(requestId, payloadText, mode) {
     var dryRun = String(mode || "dry_run") !== "commit";
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
+        if (payload.mcp_safe !== undefined) {
+            AgentCreative.handle("sample_confirm", requestId, payload, mode, prepareCreativeSampleConfirm, agentCreativeEmit);
+            return;
+        }
         var action = String(payload.action || "confirm_loaded_sample");
         if (action !== "confirm_loaded_sample" && action !== "scan_loaded_samples") {
             throw new Error("action must be confirm_loaded_sample or scan_loaded_samples");

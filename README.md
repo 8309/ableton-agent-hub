@@ -4,9 +4,24 @@ Ableton Agent Hub is an unofficial, local Max for Live bridge and Python toolkit
 for inspecting Ableton Live Sets and applying reviewed changes. It uses one Hub
 device in Live and a collection of focused Python clients outside Live.
 
-This repository is an early public alpha. Write-capable commands default to
-dry-run and require an explicit commit, but you should still test on a copy of a
-Set and review every resolved target.
+This repository is an early public alpha. MCP applies explicit write intent
+directly with stable targets and readback; inspection remains optional and
+read-only. Legacy CLI clients retain explicit `--commit`. Test on a copy of a Set.
+
+## 0.4 Alpha Update
+
+- Typed MCP tools for discovery, MIDI/Arrangement editing, device/mixer writes,
+  automation-state inventory, diagnostics and local saved-ALS evidence.
+- Mixed scalar batches and verified UI-unit input, without mandatory dry-runs.
+- Compact Hub Overview/History/Diagnostics panel with runtime build identity.
+- Local reference-audio feature ranking and cache; no model download or upload.
+
+The graphical panel still needs native Live visual acceptance. Audio ranking is
+tested on standard PCM WAV/AIFF/FLAC, but sampled compressed Pack AIF files could
+not decode. Listening acceptance remains pending. See
+[audio limits](docs/audio_similarity.md) and [release validation](docs/release_v0.4.0-alpha.md).
+Upgrading agents should reread [Agent Setup](docs/agent_setup.md) and update their
+own `AGENTS.md`; the installer never edits those instructions automatically.
 
 ## What It Does
 
@@ -44,7 +59,7 @@ operating systems are currently unverified.
 
 ```powershell
 py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install .
+.\.venv\Scripts\python.exe -m pip install ".[mcp,audio]"
 .\.venv\Scripts\ableton-agent.exe install --dry-run
 .\.venv\Scripts\ableton-agent.exe install
 ```
@@ -81,9 +96,11 @@ This writes a quick checkpoint first, then completes MIDI-note and mixer depth
 without rescanning the track and clip collections. Use `--depth quick` for an
 explicitly metadata-only refresh.
 
-Coding-agent users should also add the recommended workflow rules from
-[Agent Setup](docs/agent_setup.md) to their project-level `AGENTS.md`. The
-project never overwrites an existing instructions file.
+This source repository includes a root `AGENTS.md` so coding agents load the
+supported development and Live-safety workflow automatically. Users who install
+the package into another project should add the recommended rules from
+[Agent Setup](docs/agent_setup.md) to that project's instructions file. The
+installer never overwrites an existing instructions file.
 
 The second command is a dry-run. Only the third command writes Live's global
 tempo. Arrangement tempo automation is not editable through this Hub and can
@@ -93,6 +110,10 @@ See [Getting Started](docs/getting_started.md) for custom destinations,
 troubleshooting, and the first safe validation loop.
 
 ## Architecture
+
+See the [current structure and boundaries](docs/architecture.md) and
+[MCP configuration example](examples/mcp.toml). Install `.[mcp,audio]` for all
+optional features, then run `python -m ableton_bridge.mcp_server` via your agent.
 
 ```text
 Python client -> UDP 7400 -> Ableton Agent Hub.amxd -> Live Object Model

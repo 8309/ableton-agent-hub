@@ -75,7 +75,7 @@ parameter arrays or complete Live Set snapshots.
 
 Progress is opt-in and must not be emitted on `/parameter_summary`. Existing
 clients treat the first correlated packet on that route as the final result.
-The compatible future transport is:
+The implemented opt-in transport is:
 
 ```text
 /parameter_summary_progress request_id progress_json
@@ -87,12 +87,23 @@ Progress JSON must contain `kind: "progress"`, the same `request_id`, and a
 compatible with older Hub builds. Python already supports a separate progress
 route and ignores unrelated request IDs. Normal reads do not subscribe to it.
 
-Future Hub emission levels are reserved as `none`, `page`, `parameter`, and
-`field`. No Hub emitter or public `trace_level` is claimed by this checkpoint.
+Hub emission levels are `none` (default, no progress), `page` (target, collection,
+page and serialization boundaries), `parameter` (also parameter start/end), and
+`field` (also each property/conversion start/end). Python inspection functions,
+the CLI `--trace-level`, and MCP read_parameters accept these levels. Progress
+uses outlet 1 directly through prepend parameter_summary_progress to udpsend;
+outlet 0 keeps final replies. Packets include sequence, cursor and compact context.
+The receiver checks OSC and JSON IDs, kind and page cursor, and never resets its
+deadline on progress. Stage 2 is automated-tested; Live delivery awaits reload.
+Names in progress are capped at 96 characters; full names remain in final results.
 A Hub-side ring buffer alone cannot close the hard-block blind spot: if a
 synchronous LiveAPI call blocks Max's scheduling thread, another request cannot
 reliably read that buffer. A progress packet sent immediately before the risky
 call can identify the last reached checkpoint from Python.
+UDP is best-effort: a missing progress packet is not proof that its stage was
+never reached. A synchronous call cannot be cancelled, and final JSON timing
+does not prove the remote client received it. The current page's journal is reset
+when the collector advances, so older-page evidence cannot masquerade as current.
 
 ## Stage 3 Read-Only Diagnostic Sequence
 

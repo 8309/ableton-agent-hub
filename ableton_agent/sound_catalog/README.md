@@ -1,5 +1,10 @@
 # Local Sound Catalog
 
+Optional reference-audio search now adds bounded waveform analysis and a
+versioned SQLite cache. See [Audio Similarity](../../docs/audio_similarity.md)
+for filters, encoding limits and pending listening acceptance. This does not
+require a Hub reload or automatically load any sound.
+
 `local_sound_catalog.sqlite3` is the Agent-facing source of truth. It contains
 stable Pack/resource identities, structured fields, provenance-aware tags,
 FTS5 search, scan evidence, audio header and filename metadata, parsed Ableton
@@ -13,44 +18,36 @@ capability boundaries. `local_sound_catalog.json` remains the compatibility and
 debug export. All three are regenerated locally and excluded from Git because
 they contain absolute machine paths.
 
-Refresh from the repository root:
+Refresh from the repository root with the workspace launcher:
 
 ```powershell
-$env:PYTHONPATH='ableton_agent/python'
-python -m ableton_bridge.sound_catalog scan
-```
-
-If the system Python is unavailable, use the workspace interpreter:
-
-```powershell
-$env:PYTHONPATH='ableton_agent/python'
-& '.\experiments\text2midi\.venv\Scripts\python.exe' -m ableton_bridge.sound_catalog scan
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/python.ps1 -m ableton_bridge.sound_catalog scan
 ```
 
 Search without rescanning:
 
 ```powershell
-python -m ableton_bridge.sound_catalog search --pack "Lost and Found" --kind ableton_preset
-python -m ableton_bridge.sound_catalog search --kind plugin
-python -m ableton_bridge.sound_catalog search --official-tag "Genres|House"
-python -m ableton_bridge.sound_catalog search --query "deep bass" --role bass
-python -m ableton_bridge.sound_catalog search --bpm-min 124 --bpm-max 130 --loop
-python -m ableton_bridge.sound_catalog search --root-note C2 --one-shot
-python -m ableton_bridge.sound_catalog search --duration-max 0.25 --one-shot
-python -m ableton_bridge.sound_catalog search --device OriginalSimpler --rack-type Instrument
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/python.ps1 -m ableton_bridge.sound_catalog search --pack "Lost and Found" --kind ableton_preset
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/python.ps1 -m ableton_bridge.sound_catalog search --kind plugin
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/python.ps1 -m ableton_bridge.sound_catalog search --official-tag "Genres|House"
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/python.ps1 -m ableton_bridge.sound_catalog search --query "deep bass" --role bass
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/python.ps1 -m ableton_bridge.sound_catalog search --bpm-min 124 --bpm-max 130 --loop
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/python.ps1 -m ableton_bridge.sound_catalog search --root-note C2 --one-shot
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/python.ps1 -m ableton_bridge.sound_catalog search --duration-max 0.25 --one-shot
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/python.ps1 -m ableton_bridge.sound_catalog search --device OriginalSimpler --rack-type Instrument
 ```
 
 When the SQLite database exists, `search` uses it automatically. Inspect the
 database coverage with:
 
 ```powershell
-python -m ableton_bridge.sound_catalog db-stats
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/python.ps1 -m ableton_bridge.sound_catalog db-stats
 ```
 
 Rebuild only the database from the current JSON compatibility export with:
 
 ```powershell
-python -m ableton_bridge.sound_catalog build-db
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/python.ps1 -m ableton_bridge.sound_catalog build-db
 ```
 
 - `exists` means the path was present during the latest scan.

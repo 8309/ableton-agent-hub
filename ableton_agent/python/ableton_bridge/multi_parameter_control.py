@@ -7,8 +7,12 @@ import time
 import uuid
 from typing import Any
 
+from .execution_policy import ExecutionPolicyError, resolve_execution
+from .operation_journal import OperationJournalError, append_receipt, load_receipt
 from .osc import OscDecodeError, decode_message, encode_message
+from .reply_port_lock import reply_port_lock
 from .value_display import ValueDisplayError, format_value_display, normalize_value_display_mode
+from .ui_input import validate_value_input, parse_ui_literal
 
 
 class MultiParameterControlError(RuntimeError):
@@ -23,10 +27,10 @@ def parse_change(text: str) -> dict[str, Any]:
     parts = [part.strip() for part in text.split("|")]
     if len(parts) == 3:
         track, parameter, value = parts
-        return {"track": track, "parameter": parameter, "value": float(value)}
+        return {"track": track, "parameter": parameter, **(parse_ui_literal(value) or {"value": float(value)})}
     if len(parts) == 4:
         track, device, parameter, value = parts
-        return {"track": track, "device": device, "parameter": parameter, "value": float(value)}
+        return {"track": track, "device": device, "parameter": parameter, **(parse_ui_literal(value) or {"value": float(value)})}
     raise MultiParameterControlError(
         "Change format must be TRACK|PARAMETER|VALUE or TRACK|DEVICE|PARAMETER|VALUE"
     )
@@ -35,7 +39,8 @@ def parse_change(text: str) -> dict[str, Any]:
 def set_parameters(
     changes: list[dict[str, Any]],
     *,
-    commit: bool = False,
+    commit: bool | None = None,
+    execution: str = "auto",
     value_display: str = "ui",
     host: str = "127.0.0.1",
     command_port: int = 7400,
@@ -49,11 +54,14 @@ def set_parameters(
         raise MultiParameterControlError("too many changes; maximum is 16")
 
     request_id = uuid.uuid4().hex
-    mode = "commit" if commit else "dry_run"
+    for change in changes:
+        validate_value_input(change)
+    decision = resolve_execution("set_parameters", execution=execution, commit=commit)
+    mode = decision.wire_mode
     payload = json.dumps({"changes": changes}, ensure_ascii=False)
     packet = encode_message("/set_parameters", [request_id, payload, mode])
 
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
+    with reply_port_lock(reply_port, timeout=timeout), socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
         reply_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         reply_socket.bind((host, reply_port))
         reply_socket.settimeout(min(timeout, 0.2))
@@ -87,18 +95,38 @@ def set_parameters(
             result["from"] = address[0]
             result["port"] = address[1]
             result["value_display"] = value_display
+            result["execution"] = {
+                "requested": decision.requested,
+                "effective": decision.effective,
+                "risk": decision.risk,
+            }
+            if result.get("ok") and result.get("applied") and isinstance(result.get("undo_receipt"), dict):
+                try:
+                    result["undo_journal_path"] = str(append_receipt(result["undo_receipt"]))
+                except OperationJournalError as error:
+                    result.setdefault("warnings", []).append(f"operation applied but undo receipt was not saved: {error}")
             return format_value_display(result, value_display)
 
 
+def restore_parameters(operation_id: str, *, timeout: float = 3.0, journal_path=None, **connection: Any) -> dict[str, Any]:
+    receipt = load_receipt(operation_id, path=journal_path)
+    if receipt.get("route") != "/set_parameters":
+        raise MultiParameterControlError(f"operation {operation_id} is not a parameter operation")
+    return set_parameters(receipt.get("restore_changes", []), execution="apply", timeout=timeout, **connection)
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Dry-run or set device parameters on ordinary, Return, or Main Live tracks")
+    parser = argparse.ArgumentParser(description="Inspect, apply, or restore device parameters")
     parser.add_argument(
         "--change",
         action="append",
-        required=True,
+        required=False,
         help="TRACK|PARAMETER|VALUE or TRACK|DEVICE|PARAMETER|VALUE; repeat for multiple tracks",
     )
-    parser.add_argument("--commit", action="store_true", help="Actually change the Set. Without this, only dry-runs.")
+    parser.add_argument("--inspect", action="store_true", help="Inspect targets without changing Live")
+    parser.add_argument("--commit", action="store_true", help="Legacy alias for --execution apply")
+    parser.add_argument("--execution", choices=["auto", "inspect", "apply"], default="auto")
+    parser.add_argument("--restore", metavar="OPERATION_ID", help="Restore exact before-values from the local journal")
     parser.add_argument("--section", choices=["track", "return", "main", "master"], help="Apply one section to every --change")
     parser.add_argument("--track-id", type=int, help="Session-stable target id; use one change per command with this option")
     parser.add_argument("--device-id", type=int, help="Stable Rack or nested device id; requires exactly one --change")
@@ -118,6 +146,12 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        if args.restore:
+            result = restore_parameters(args.restore, timeout=args.timeout, host=args.host, command_port=args.command_port, reply_port=args.reply_port)
+            print(json.dumps({"ok": True, "result": result}, indent=2, ensure_ascii=False), flush=True)
+            return 0
+        if not args.change:
+            raise MultiParameterControlError("--change is required unless --restore is used")
         changes = [parse_change(change) for change in args.change]
         if any(value is not None for value in (args.track_id, args.device_id, args.parameter_id)) and len(changes) != 1:
             raise MultiParameterControlError("stable ID options require exactly one --change")
@@ -136,14 +170,15 @@ def main() -> int:
                 change["max_device_count"] = args.max_device_count
         result = set_parameters(
             changes,
-            commit=args.commit,
+            commit=True if args.commit else (False if args.inspect else None),
+            execution=args.execution,
             value_display=args.value_display,
             host=args.host,
             command_port=args.command_port,
             reply_port=args.reply_port,
             timeout=args.timeout,
         )
-    except (MultiParameterControlError, ValueDisplayError, json.JSONDecodeError, ValueError) as error:
+    except (MultiParameterControlError, ExecutionPolicyError, OperationJournalError, ValueDisplayError, json.JSONDecodeError, ValueError) as error:
         print(json.dumps({"ok": False, "error": str(error)}, indent=2), flush=True)
         return 1
     print(json.dumps({"ok": True, "result": result}, indent=2, ensure_ascii=False), flush=True)

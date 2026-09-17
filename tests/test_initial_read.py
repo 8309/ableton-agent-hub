@@ -233,6 +233,42 @@ class InitialReadTest(unittest.TestCase):
         self.assertEqual(result["warnings"][0]["type"], "adaptive_note_window")
         self.assertEqual(len(result["warnings"]), 1)
 
+    def test_optional_saved_als_layer_is_fused_without_extra_live_reads(self) -> None:
+        patches = self.common_patches()
+        saved = {
+            "ok": True,
+            "read_only": True,
+            "source": {"path": "C:\\Sets\\Song.als", "file_token": "file-token"},
+            "summary": {"saved_manual_bpm": 132.0, "track_count": 1},
+            "snapshot": {
+                "main_track": {"present": True, "tempo": {"manual_bpm": 132.0}},
+                "locators": [],
+                "tracks": [
+                    {
+                        "type": "MidiTrack",
+                        "name": "Keys",
+                        "is_return": False,
+                        "group_path": [],
+                    }
+                ],
+            },
+            "warnings": [],
+        }
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patch.object(
+            initial_read_module, "clip_note_tools_bounded", return_value=clip_metadata_result()
+        ), patch.object(initial_read_module, "read_saved_set", return_value=saved) as saved_mock:
+            result = initial_read_module.initial_read(
+                depth="quick", als_path="C:\\Sets\\Song.als", saved_sections={"tracks"}
+            )
+
+        saved_mock.assert_called_once()
+        self.assertEqual(saved_mock.call_args.args, ("C:\\Sets\\Song.als",))
+        self.assertEqual(saved_mock.call_args.kwargs["sections"], {"tracks"})
+        self.assertEqual(result["saved_als"]["source"]["file_token"], "file-token")
+        self.assertEqual(result["sources"]["saved_als"]["status"], "complete")
+        self.assertEqual(result["summary"]["saved_als_status"], "complete")
+        self.assertIn("tempo", result["saved_live_comparison"]["comparisons"])
+
 
 if __name__ == "__main__":
     unittest.main()

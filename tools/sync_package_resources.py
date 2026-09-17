@@ -28,7 +28,7 @@ def sync() -> dict:
     sys_path.insert(0, str(ROOT / "ableton_agent"))
     from build_hub_device import JAVASCRIPT_SOURCES
 
-    names = ["Ableton Agent Hub.amxd", *(source.name for source in JAVASCRIPT_SOURCES)]
+    names = ["Ableton Agent Hub.amxd", "hub_build_manifest.json", *(source.name for source in JAVASCRIPT_SOURCES)]
     DESTINATION.mkdir(parents=True, exist_ok=True)
     files = []
     for name in names:

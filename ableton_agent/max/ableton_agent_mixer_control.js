@@ -3,6 +3,7 @@ inlets = 1;
 outlets = 1;
 
 include("ableton_agent_value_display.js");
+include("ableton_agent_ui_input.js");
 
 
 var MAX_CHANGES = 32;
@@ -81,6 +82,19 @@ function safeGet(api, propertyName, fallback) {
     } catch (_error) {
         return fallback;
     }
+}
+
+
+function nowMs() {
+    return new Date().getTime();
+}
+
+
+function valuesEqual(left, right) {
+    if (typeof left === "boolean" || typeof right === "boolean") {
+        return Boolean(left) === Boolean(right);
+    }
+    return Math.abs(Number(left) - Number(right)) <= 0.000001;
 }
 
 
@@ -221,6 +235,7 @@ function normalizeChanges(payload) {
 
 
 function preflightChange(change, changeIndex) {
+    AgentUiInput.exclusive(change);
     var field = normalize(change.field);
     if (!MIX_FIELDS[field]) {
         throw new Error("Unsupported mix field: " + field);
@@ -230,11 +245,15 @@ function preflightChange(change, changeIndex) {
     var requestedValue = change.value;
 
     if (field === "mute" || field === "solo" || field === "arm") {
+        if (change.ui_value !== undefined) { throw new Error("unsupported_ui_value: use numeric value for track switches"); }
         if (field === "arm" && !Boolean(Number(valueOf(safeGet(track.api, "can_be_armed", 0), 0)))) {
             throw new Error("Track cannot be armed: " + trackName);
         }
         var beforeBool = Boolean(Number(valueOf(safeGet(track.api, field, 0), 0)));
         var boolValue = Boolean(Number(requestedValue));
+        if (change.expected_before !== undefined && !valuesEqual(beforeBool, Boolean(Number(change.expected_before)))) {
+            throw new Error("stale_before_value: current " + beforeBool + " does not match expected " + Boolean(Number(change.expected_before)));
+        }
         return {
             change_index: changeIndex,
             kind: "property",
@@ -248,12 +267,15 @@ function preflightChange(change, changeIndex) {
 
     var parameterId = resolveMixerParameter(track.api, change);
     var before = parameterInfo(parameterId);
-    var value = Number(requestedValue);
+    var value = AgentUiInput.resolve(change, new LiveAPI(function () {}, "id " + parameterId), before, {field:field});
     if (!isFinite(value)) {
         throw new Error("value must be a number");
     }
     if (value < before.min || value > before.max) {
         throw new Error("Value must be between " + before.min + " and " + before.max);
+    }
+    if (change.expected_before !== undefined && !valuesEqual(before.value, change.expected_before)) {
+        throw new Error("stale_before_value: current " + before.value + " does not match expected " + change.expected_before);
     }
     return {
         change_index: changeIndex,
@@ -264,8 +286,42 @@ function preflightChange(change, changeIndex) {
         track_name: trackName,
         parameter_id: parameterId,
         before: before,
-        value: value
+        value: value,
+        requested_ui_value: change.ui_value
     };
+}
+
+
+function currentInternalValue(resolved) {
+    if (resolved.kind === "property") {
+        return Boolean(Number(valueOf(safeGet(resolved.track.api, resolved.field, 0), 0)));
+    }
+    return Number(valueOf(new LiveAPI(function () {}, "id " + resolved.parameter_id).get("value"), 0));
+}
+
+
+function writeResolved(resolved, value) {
+    if (resolved.kind === "property") {
+        resolved.track.api.set(resolved.field, value ? 1 : 0);
+    } else {
+        new LiveAPI(function () {}, "id " + resolved.parameter_id).set("value", Number(value));
+    }
+}
+
+
+function restoreChange(resolved, afterValue) {
+    var beforeValue = resolved.kind === "property" ? resolved.before : resolved.before.value;
+    var change = {
+        section: resolved.track.section,
+        track_id: resolved.track.id,
+        field: resolved.field,
+        value: beforeValue,
+        expected_before: afterValue
+    };
+    if (resolved.field === "send") {
+        change.send = resolved.send;
+    }
+    return change;
 }
 
 
@@ -304,6 +360,7 @@ function resultForResolved(resolved, dryRun) {
             max: resolved.before.max
         },
         before: AbletonAgentValueDisplay.valuePayload(resolved.before),
+        requested_ui_value: resolved.requested_ui_value,
         requested_value: resolved.value,
         after: AbletonAgentValueDisplay.valuePayload(after)
     };
@@ -311,53 +368,88 @@ function resultForResolved(resolved, dryRun) {
 
 
 function setMix(requestId, payloadText, mode) {
-    var dryRun = String(mode || "dry_run") !== "commit";
+    var normalizedMode = String(mode || "dry_run").toLowerCase();
+    var dryRun = normalizedMode !== "commit" && normalizedMode !== "apply";
+    var startedAt = nowMs();
+    var resolved = [];
+    var written = [];
+    var timing = {resolve_ms: 0, write_ms: 0, readback_ms: 0, total_ms: 0};
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
         var changes = normalizeChanges(payload);
-        var resolved = [];
         var results = [];
 
+        var resolveStartedAt = nowMs();
         for (var index = 0; index < changes.length; index += 1) {
             resolved.push(preflightChange(changes[index], index));
         }
+        timing.resolve_ms = nowMs() - resolveStartedAt;
 
         if (!dryRun) {
-            for (var identityIndex = 0; identityIndex < resolved.length; identityIndex += 1) {
-                if (resolved[identityIndex].track.section !== "track" && Number(changes[identityIndex].track_id) !== resolved[identityIndex].track.id) {
-                    throw new Error("Commit to Return/Main requires track_id from the preceding dry-run");
-                }
-            }
-        }
-
-        if (!dryRun) {
+            var writeStartedAt = nowMs();
             for (var writeIndex = 0; writeIndex < resolved.length; writeIndex += 1) {
-                if (resolved[writeIndex].kind === "property") {
-                    resolved[writeIndex].track.api.set(resolved[writeIndex].field, resolved[writeIndex].value ? 1 : 0);
-                } else {
-                    var parameter = new LiveAPI(function () {}, "id " + resolved[writeIndex].parameter_id);
-                    parameter.set("value", resolved[writeIndex].value);
-                }
+                writeResolved(resolved[writeIndex], resolved[writeIndex].value);
+                written.push(resolved[writeIndex]);
             }
+            timing.write_ms = nowMs() - writeStartedAt;
         }
 
+        var readbackStartedAt = nowMs();
         for (var resultIndex = 0; resultIndex < resolved.length; resultIndex += 1) {
+            if (!dryRun && !valuesEqual(currentInternalValue(resolved[resultIndex]), resolved[resultIndex].value)) {
+                throw new Error("readback_mismatch at change " + resultIndex);
+            }
             results.push(resultForResolved(resolved[resultIndex], dryRun));
+        }
+        timing.readback_ms = nowMs() - readbackStartedAt;
+        timing.total_ms = nowMs() - startedAt;
+
+        var restoreChanges = [];
+        if (!dryRun) {
+            for (var receiptIndex = 0; receiptIndex < resolved.length; receiptIndex += 1) {
+                restoreChanges.push(restoreChange(resolved[receiptIndex], currentInternalValue(resolved[receiptIndex])));
+            }
         }
 
         outlet(0, [requestId, JSON.stringify({
             ok: true,
             dry_run: dryRun,
             applied: !dryRun,
+            operation: dryRun ? "inspect" : "apply",
+            inspection_kind: dryRun ? "target_and_projected_value" : null,
+            simulated: false,
             change_count: results.length,
             results: results,
-            message: dryRun ? "Ready to set mixer values; rerun with commit to change the Set" : "Mixer values updated"
+            timings: timing,
+            undo_receipt: dryRun ? null : {
+                operation_id: requestId,
+                route: "/set_mix",
+                restore_changes: restoreChanges
+            },
+            message: dryRun ? "Targets inspected; no Live state changed" : "Mixer values updated and read back"
         })]);
     } catch (error) {
+        var rollbackErrors = [];
+        if (!dryRun && written.length) {
+            for (var rollbackIndex = written.length - 1; rollbackIndex >= 0; rollbackIndex -= 1) {
+                try {
+                    writeResolved(written[rollbackIndex], written[rollbackIndex].kind === "property"
+                        ? written[rollbackIndex].before : written[rollbackIndex].before.value);
+                } catch (rollbackError) {
+                    rollbackErrors.push(rollbackError && rollbackError.message ? rollbackError.message : String(rollbackError));
+                }
+            }
+        }
+        timing.total_ms = nowMs() - startedAt;
         outlet(0, [requestId, JSON.stringify({
             ok: false,
             dry_run: dryRun,
             applied: false,
+            operation: dryRun ? "inspect" : "apply",
+            rolled_back: !dryRun && written.length > 0 && rollbackErrors.length === 0,
+            rollback_errors: rollbackErrors,
+            completed_before_failure: written.length,
+            timings: timing,
             error: error && error.message ? error.message : String(error)
         })]);
     }

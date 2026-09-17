@@ -22,7 +22,7 @@ A Live-facing capability normally includes:
 - a route in the Hub patch when Live access is required;
 - builder and installer-resource coverage;
 - unit/static tests;
-- one documented dry-run, minimal commit, and readback when the operation writes.
+- one explicit-intent minimal apply and readback when the operation writes.
 
 Keep existing routes compatible unless a breaking change is explicitly planned.
 Use Live's stable object IDs for commits where indices can change.
@@ -42,7 +42,7 @@ Live validation is manual and is not replaced by unit tests.
 
 ## Safety Requirements
 
-- Write-capable commands default to dry-run.
+- MCP applies explicit user intent; legacy CLI commands retain `--commit`.
 - Dry-run must not mutate Live state.
 - Commit must resolve and report its target before writing.
 - Commit should read back the affected state whenever Live exposes it.
@@ -54,14 +54,17 @@ Live validation is manual and is not replaced by unit tests.
 Do not commit songs, ALS files, samples, local catalogs, machine paths, secrets,
 session handoffs, or generated experiment data. `PUBLIC_EXPORT_MANIFEST.json`
 records the curated source snapshot. Public-owned packaging files are protected
-from later source exports by `tools/export_from_workspace.py`.
+from later source exports by `tools/export_from_workspace.py`. The exporter
+normalizes exported text to LF before hashing it so the manifest matches a clean
+Git checkout on every platform. Regenerate the manifest through the exporter;
+do not edit its hashes by hand.
 
 ## Pull Request Checklist
 
 - Scope and user-visible behavior are described.
 - Tests pass.
 - Hub build and packaged resources match.
-- Dry-run and commit behavior are documented.
+- Direct apply, optional inspect and readback behavior are documented.
 - Live version and validation evidence are stated.
 - Capability matrix and API-limit docs are updated when behavior changes.
 - No personal paths or private project data are included.

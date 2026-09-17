@@ -1,9 +1,16 @@
 autowatch = 1;
+include("ableton_agent_health.js");
+include("ableton_agent_creative_control.js");
 inlets = 1;
 outlets = 1;
 
 
 var MAX_NOTES = 512;
+
+function prepareCreativeClipWriter(p) {
+    var t = AgentCreative.track(p);
+    return AgentCreative.newClip(t, p, normalizeNotes(p.notes, p.length));
+}
 
 
 function bang() {
@@ -276,6 +283,13 @@ function writeClip(requestId, payloadText, mode) {
     var dryRun = String(mode || "dry_run") !== "commit";
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
+        if (payload.action === "_module_health") {
+            AgentHealth.reply(requestId, "clips", mode); return;
+        }
+        if (payload.mcp_safe !== undefined) {
+            AgentCreative.handle("write_clip", requestId, payload, mode, prepareCreativeClipWriter, agentCreativeEmit);
+            return;
+        }
         var track = resolveTrack(payload);
         var sceneIndex = Number(payload.scene_index !== undefined ? payload.scene_index : payload.scene);
         if (!isFinite(sceneIndex) || sceneIndex < 0 || Math.floor(sceneIndex) !== sceneIndex) {
@@ -343,6 +357,11 @@ function writeArrangementClip(requestId, payloadText, mode) {
     var dryRun = String(mode || "dry_run") !== "commit";
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
+        if (payload.mcp_safe !== undefined) {
+            payload.location = "arrangement";
+            AgentCreative.handle("write_arrangement_clip", requestId, payload, mode, prepareCreativeClipWriter, agentCreativeEmit);
+            return;
+        }
         var track = resolveTrack(payload);
         var start = Number(payload.start_time !== undefined ? payload.start_time : payload.start);
         var length = Number(payload.length || 4);

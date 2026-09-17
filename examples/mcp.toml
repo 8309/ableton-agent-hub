@@ -1,0 +1,16 @@
+# Replace this example path with the Python executable in your project environment.
+# Install the checkout with: python -m pip install -e ".[mcp,audio]"
+[mcp_servers.ableton_agent]
+command = "C:/path/ableton-agent-hub/.venv/Scripts/python.exe"
+args = ["-m", "ableton_bridge.mcp_server"]
+enabled_tools = [
+  "ableton_status", "ableton_read_set", "ableton_find_target",
+  "ableton_read_parameters", "ableton_set_mix", "ableton_set_parameters",
+  "ableton_diagnose_parameters", "ableton_apply_batch", "ableton_transport",
+  "ableton_tempo", "ableton_list_locators", "ableton_scan_clips",
+  "ableton_read_clip_notes", "ableton_read_meters", "ableton_write_midi_clip",
+  "ableton_edit_midi_notes", "ableton_vary_midi_clip", "ableton_search_sounds",
+  "ableton_confirm_sample", "ableton_insert_device", "ableton_eq",
+  "ableton_manage_tracks", "ableton_manage_scenes", "ableton_scan_automation",
+  "ableton_edit_arrangement", "ableton_read_saved_automation", "ableton_read_saved_set"
+]

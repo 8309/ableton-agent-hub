@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .osc import OscDecodeError, decode_message, encode_message
+from .reply_port_lock import reply_port_lock
 from .runtime_diagnostics import (
     begin_request,
     checkpoint_request,
@@ -115,7 +116,7 @@ def request_page(
             request_id=request_id,
             details={"payload": summarize_payload(request_payload)},
         ) from error
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
+    with reply_port_lock(reply_port, timeout=timeout), socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
         reply_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         reply_socket.bind((host, reply_port))
         reply_socket.settimeout(min(timeout, 0.2))
@@ -188,10 +189,14 @@ def request_page(
                     stage="client_received",
                     request_id=request_id,
                 ) from error
+            if not isinstance(result, dict) or result.get("request_id", request_id) != request_id:
+                continue
             if is_progress:
                 if result.get("kind") != "progress":
                     continue
                 checkpoint = result.get("checkpoint") if isinstance(result.get("checkpoint"), dict) else {}
+                if checkpoint.get("cursor", payload.get("read", {}).get("cursor")) != payload.get("read", {}).get("cursor"):
+                    continue
                 checkpoint_request(
                     request_id,
                     str(checkpoint.get("stage", "hub_progress")),
@@ -200,6 +205,8 @@ def request_page(
                 )
                 if on_progress is not None:
                     on_progress(result)
+                continue
+            if result.get("kind", "final") != "final":
                 continue
             result["request_id"] = request_id
             result["from"] = address[0]
@@ -369,6 +376,7 @@ def collect_pages(
             "partial": not complete,
             "stop_reason": stop_reason,
             "collection_token": expected_token,
+            "next_cursor": final_read.get("next_cursor") if final_read and final_read.get("has_more") else None,
             "page_count": len(pages),
             "returned_count": len(items),
             "elapsed_ms": round((time.monotonic() - started) * 1000, 3),

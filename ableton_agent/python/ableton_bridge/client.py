@@ -7,6 +7,7 @@ import uuid
 from typing import Any
 
 from .osc import OscDecodeError, decode_message, encode_message
+from .reply_port_lock import reply_port_lock
 
 
 class BridgeError(RuntimeError):
@@ -43,7 +44,7 @@ class AbletonBridgeClient:
         payload_json = json.dumps(payload or {}, separators=(",", ":"), ensure_ascii=True)
         packet = encode_message("/agent", [request_id, command, payload_json])
 
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
+        with reply_port_lock(self.reply_port, timeout=self.timeout), socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
             reply_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             reply_socket.bind((self.host, self.reply_port))
             reply_socket.settimeout(min(self.timeout, 0.2))

@@ -7,8 +7,11 @@ session in this workspace:
 powershell -ExecutionPolicy Bypass -File scripts/read_current_set.ps1
 ```
 
-It automatically resolves the local Python runtime, configures `PYTHONPATH`,
-runs the production Hub reader, and uses a progressive default:
+It uses the same fixed `.venv` resolver as the MCP and Python launchers,
+configures `PYTHONPATH`, runs the production Hub reader, and uses a progressive
+default. An explicit `ABLETON_AGENT_PYTHON` override is supported; missing
+interpreters fail without searching system aliases or Codex caches. See
+[Python Environment](python_environment.md).
 
 1. Write the quick Set map to
    `ableton_agent/runtime/current_set_initial_read.quick.json`.
@@ -47,3 +50,19 @@ powershell -ExecutionPolicy Bypass -File scripts/read_current_set.ps1 -Depth qui
 
 The launcher and both depths are read-only. They do not modify the Live Set and
 do not require a Hub rebuild or reload.
+
+## Optional Saved ALS Layer
+
+When the matching `.als` file has been saved manually and its absolute path is
+known, add it to the same first read:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/read_current_set.ps1 `
+  -AlsPath "C:\\path\\Song.als"
+```
+
+This does not replace the Hub read. It adds `saved_als` and
+`saved_live_comparison` to the context. The saved layer is static last-saved
+evidence; the Hub layer remains authoritative for current Live state and writes.
+Use `-IncludeSavedDeviceParameters` or `-IncludeSavedMidiNotes` only when those
+larger fields are needed.

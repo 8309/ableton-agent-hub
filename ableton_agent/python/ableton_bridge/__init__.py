@@ -2,7 +2,7 @@
 
 from .client import AbletonBridgeClient, BridgeCommandError, BridgeTimeoutError
 
-__version__ = "0.2.0a0"
+__version__ = "0.4.0a0"
 
 __all__ = [
     "AbletonBridgeClient",

@@ -1,4 +1,23 @@
 autowatch = 1;
+include("ableton_agent_creative_control.js");
+function prepareCreativeClipVariation(p) {
+    if (["duplicate_clip","make_fill","thin_notes","mute_notes_in_range"].indexOf(p.action)<0) { throw new Error("Unsupported variation"); }
+    var t=AgentCreative.track(p), c=AgentCreative.clip(t,p.clip_id,true);
+    var ns=AgentCreative.notes(c), length=Number(AgentCreative.value(c.get("length")));
+    if(Number(AgentCreative.value(c.get("loop_start")))!==0 ||
+       Number(AgentCreative.value(c.get("start_marker")))!==0 ||
+       Math.abs(Number(AgentCreative.value(c.get("loop_end")))-length)>0.0001) {
+        throw new Error("Variation currently requires a zero-origin, single-loop source Clip");
+    }
+    var candidate={notes:ns,length:length};
+    var varied=variationNotes(candidate,p);
+    var target={location:"arrangement",start:p.target_start,length:length,name:p.name || "MIDI Variation"};
+    var work=AgentCreative.newClip(t,target,varied.notes);
+    work.state=[ns,length,work.state];
+    work.plan.source_clip_id=p.clip_id;
+    work.plan.warning="New note-data variation only; Clip envelopes, MPE and launch settings are not copied. Original is untouched.";
+    return work;
+}
 inlets = 1;
 outlets = 1;
 
@@ -451,6 +470,10 @@ function handleClipVariation(requestId, payloadText, mode) {
     var dryRun = String(mode || "dry_run") !== "commit";
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
+        if (payload.mcp_safe !== undefined) {
+            AgentCreative.handle("clip_variation", requestId, payload, mode, prepareCreativeClipVariation, agentCreativeEmit);
+            return;
+        }
         var action = String(payload.action || "scan_clips");
         var allowed = ["scan_clips", "duplicate_clip", "make_fill", "thin_notes", "mute_notes_in_range"];
         if (allowed.indexOf(action) < 0) {

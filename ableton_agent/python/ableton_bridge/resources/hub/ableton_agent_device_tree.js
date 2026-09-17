@@ -349,7 +349,77 @@ var AbletonAgentDeviceTree = (function () {
         throw new Error("device_id is not in the target track device tree");
     }
 
+    // Page one container, not a truncated depth-first prefix. Rack IDs identify
+    // the next containers; ordered collection tokens reject changed siblings.
+    function scanChildren(track, payload) {
+        var read = AbletonAgentReadCore.parse({read: {
+            cursor: payload.cursor === undefined ? 0 : payload.cursor,
+            limit: payload.limit === undefined ? 4 : payload.limit,
+            budget_ms: payload.budget_ms === undefined ? 1000 : payload.budget_ms,
+            expected_collection_token: payload.expected_collection_token,
+            projection: ["identity"]
+        }}, {max_limit: 32, max_cursor: 65536, default_limit: 4,
+            allowed_projection: ["identity"], default_projection: ["identity"]});
+        var entries = [];
+        var signature = [Number(track.id)];
+        var rootId = payload.root_device_id;
+        var containers = [{api: track, chain: null, path: []}];
+        if (rootId !== undefined && rootId !== null) {
+            var found = findDevice(track, rootId, {max_depth: 12, max_devices: 512});
+            if (!found.record.can_have_chains) { throw new Error("root_device_id must identify a Rack-capable device"); }
+            signature.push(Number(rootId));
+            containers = [];
+            var kinds = ["chains", "return_chains"];
+            for (var k = 0; k < kinds.length; k += 1) {
+                var chainIds = idsFrom(found.api.get(kinds[k]));
+                signature.push(k, chainIds.length);
+                for (var c = 0; c < chainIds.length; c += 1) {
+                    signature.push(chainIds[c]);
+                    var chain = {id: chainIds[c], name: null, rack_device_id: Number(rootId)};
+                    var path = found.record.chain_path.concat([{rack_device_id: Number(rootId),
+                        chain_id: chainIds[c], chain_index: c, chain_kind: kinds[k]}]);
+                    containers.push({api: new LiveAPI(function () {}, "id " + chainIds[c]), chain: chain, path: path});
+                }
+            }
+        }
+        for (var ci = 0; ci < containers.length; ci += 1) {
+            var container = containers[ci];
+            var ids = idsFrom(container.api.get("devices"));
+            signature.push(ids.length);
+            signature = signature.concat(ids);
+            for (var i = 0; i < ids.length; i += 1) {
+                entries.push({id: ids[i], index: i, chain: container.chain, path: container.path});
+            }
+        }
+        var token = AbletonAgentReadCore.collectionToken(signature);
+        AbletonAgentReadCore.verifyCollection(read, token);
+        if (read.cursor > entries.length) { throw new Error("cursor outside device collection"); }
+        var records = [];
+        while (read.cursor + records.length < entries.length && records.length < read.limit) {
+            if (records.length && AbletonAgentReadCore.budgetExceeded(read)) { break; }
+            var entry = entries[read.cursor + records.length];
+            var api = new LiveAPI(function () {}, "id " + entry.id);
+            // Discovery does not read parameter collections or format values.
+            records.push({device_id: entry.id, device_index: entry.index,
+                name: String(valueOf(api.get("name"), "")),
+                can_have_chains: Boolean(Number(valueOf(api.get("can_have_chains"), 0))),
+                parent_chain_id: entry.chain ? entry.chain.id : null,
+                parent_rack_device_id: entry.chain ? entry.chain.rack_device_id : null,
+                chain_path: entry.path});
+        }
+        var next = read.cursor + records.length;
+        var more = next < entries.length;
+        return {devices: records, device_count: records.length, container_device_count: entries.length,
+            root_device_id: rootId === undefined ? null : rootId,
+            selectable_child_rack_ids: childRackIds(records, null),
+            scope: "direct_children", read: AbletonAgentReadCore.metadata(read, {
+                next_cursor: next, scanned_count: records.length, returned_count: records.length,
+                has_more: more, partial: more && records.length < read.limit,
+                collection_token: token, warnings: []})};
+    }
+
     return {
+        scanChildren: scanChildren,
         idsFrom: idsFrom,
         safeGet: safeGet,
         scanTrack: scanTrack,

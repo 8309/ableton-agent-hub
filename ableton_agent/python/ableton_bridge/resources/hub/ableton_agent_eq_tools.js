@@ -1,4 +1,28 @@
 autowatch = 1;
+include("ableton_agent_creative_control.js");
+function prepareCreativeEqTools(p) {
+    if(p.action==="list_presets") { return {read_only:true,state:[],plan:{presets:presetList()}}; }
+    var t=AgentCreative.track(p), d=AgentCreative.device(t,p.device_id);
+    if(["Eq8","EqEight"].indexOf(String(AgentCreative.value(d.api.get("class_name"))))<0) { throw new Error("Target must be EQ Eight"); }
+    if(p.action!=="apply_preset" || !EQ_PRESETS[p.preset]) { throw new Error("Unknown EQ preset"); }
+    var plan=applyMoves(t,d,EQ_PRESETS[p.preset].moves,true), state=[];
+    if(plan.skipped_count) { throw new Error("Preset has unresolved parameters; refusing partial preset"); }
+    for(var i=0;i<plan.changes.length;i+=1) {
+        var change=plan.changes[i], a=AgentCreative.api(change.parameter.id);
+        if(!Number(AgentCreative.value(a.get("is_enabled")))) { throw new Error("EQ parameter disabled or Macro-controlled: "+change.parameter.name); }
+        state.push([change.parameter.id,change.before.value]);
+    }
+    return {state:state,plan:plan,apply:function() {
+        for(var j=0;j<plan.changes.length;j+=1) {
+            var change=plan.changes[j], a=AgentCreative.api(change.parameter.id);
+            a.set("value",change.after.value);
+            var readback=parameterInfo(a,change.parameter.index,change.parameter.id);
+            if(Math.abs(readback.value-change.after.value)>0.00001) { throw new Error("EQ readback mismatch: "+change.parameter.name); }
+            change.after=AbletonAgentValueDisplay.valuePayload(readback);
+        }
+        plan.verified=true; return plan;
+    }};
+}
 inlets = 1;
 outlets = 1;
 
@@ -405,6 +429,10 @@ function handleEqTools(requestId, payloadText, mode) {
     var dryRun = String(mode || "dry_run") !== "commit";
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
+        if (payload.mcp_safe !== undefined) {
+            AgentCreative.handle("eq_tools", requestId, payload, mode, prepareCreativeEqTools, agentCreativeEmit);
+            return;
+        }
         var action = String(payload.action || "list_presets");
         var allowed = ["list_presets", "read_eq", "apply_preset", "set_band"];
         if (allowed.indexOf(action) < 0) {

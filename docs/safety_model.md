@@ -12,8 +12,10 @@ Live's own undo and save workflows.
 | Dry-run | Resolve and preview a write | Validate target and values without writing |
 | Commit | Apply a reviewed write | Explicit opt-in, narrow mutation, then readback where possible |
 
-Write-capable Python clients default to dry-run. `--commit` is the explicit
-boundary between a plan and a Live mutation.
+MCP applies explicit user write intent directly, resolving targets and reading
+back affected state. A separate dry-run is optional, not mandatory. Legacy
+Python CLI clients retain `--commit` as their write flag. Dry-run is validation,
+not an audible or structural simulation. No risk-tier policy is used.
 
 ## Target Resolution
 
@@ -22,8 +24,8 @@ or move as the Set changes. The Hub prefers stable Live object IDs for commits,
 especially for Return and Main targets. A dry-run should return the resolved
 section, object ID, name, and relevant before-state.
 
-Do not reuse a plan after changing track order or replacing devices. Rescan and
-generate a new dry-run.
+Do not reuse stale IDs after replacing devices or Sets. Resolve the target again.
+Validate any optional stale-state guard or plan token that a caller supplies.
 
 ## Readback
 
@@ -48,8 +50,7 @@ Code must not guess units or assume a linear conversion.
 
 - Work on a duplicate Set for initial validation.
 - Save before a commit and keep Live's undo history available.
-- Never delete a non-empty track, clip, scene, or device without an explicit
-  reviewed plan.
+- Never delete non-empty content without explicit user intent and resolved targets.
 - Prefer no-op or same-value commits when validating a new write path.
 - Treat partial errors as a reason to inspect Live before retrying.
 
@@ -81,8 +82,8 @@ enough target context to diagnose the problem. After a timeout or error:
 1. wait for the original request to finish;
 2. ping the Hub;
 3. rescan the target;
-4. create a new dry-run;
-5. commit only after the new plan is correct.
+4. report whether the write occurred or remains unknown;
+5. retry only after affected state and user intent are clear.
 
-See the [dry-run/commit contract](../ableton_agent/schemas/dry_run_commit_contract.md)
+See the [direct-intent contract](../ableton_agent/schemas/risk_based_execution_contract.md)
 for the machine-facing rules.

@@ -4,6 +4,7 @@ outlets = 1;
 
 include("ableton_agent_device_tree.js");
 include("ableton_agent_value_display.js");
+include("ableton_agent_ui_input.js");
 
 
 var MAX_CHANGES = 16;
@@ -61,6 +62,16 @@ function idFrom(raw) {
 
 function normalize(value) {
     return String(value || "").toLowerCase().replace(/^\s+|\s+$/g, "");
+}
+
+
+function nowMs() {
+    return new Date().getTime();
+}
+
+
+function valuesEqual(left, right) {
+    return Math.abs(Number(left) - Number(right)) <= 0.000001;
 }
 
 
@@ -297,7 +308,8 @@ function preflightChange(change, changeIndex) {
     var selector = change.parameter !== undefined ? change.parameter : change.parameter_name;
     var parameter = resolveParameter(device, selector, change.parameter_id);
     var before = parameterInfo(parameter.api, parameter.index, parameter.id);
-    var value = Number(change.value);
+    var value = AgentUiInput.resolve(change, parameter.api, before,
+        {device_class:change.ui_value !== undefined ? String(valueOf(device.get("class_name"), "")) : ""});
     if (!isFinite(value)) {
         throw new Error("value must be a number");
     }
@@ -313,6 +325,9 @@ function preflightChange(change, changeIndex) {
     if (before.is_quantized) {
         value = Math.round(value);
     }
+    if (change.expected_before !== undefined && !valuesEqual(before.value, change.expected_before)) {
+        throw new Error("stale_before_value: current " + before.value + " does not match expected " + change.expected_before);
+    }
     return {
         change_index: changeIndex,
         track: track,
@@ -321,7 +336,21 @@ function preflightChange(change, changeIndex) {
         device_record: deviceTarget.record,
         parameter: parameter,
         before: before,
-        value: value
+        value: value,
+        requested_ui_value: change.ui_value
+    };
+}
+
+
+function restoreChange(resolved, afterValue) {
+    return {
+        section: resolved.track.section,
+        track_id: resolved.track.id,
+        device_id: resolved.device_id,
+        parameter_id: resolved.parameter.id,
+        value: resolved.before.value,
+        expected_before: afterValue,
+        max_device_depth: resolved.device_record ? resolved.device_record.depth : 0
     };
 }
 
@@ -354,48 +383,59 @@ function resultForResolved(resolved, after) {
         },
         before: AbletonAgentValueDisplay.valuePayload(resolved.before),
         requested_value: resolved.value,
+        requested_ui_value: resolved.requested_ui_value,
         after: AbletonAgentValueDisplay.valuePayload(after)
     };
 }
 
 
 function setParameters(requestId, payloadText, mode) {
-    var dryRun = String(mode || "dry_run") !== "commit";
+    var normalizedMode = String(mode || "dry_run").toLowerCase();
+    var dryRun = normalizedMode !== "commit" && normalizedMode !== "apply";
+    var startedAt = nowMs();
+    var resolved = [];
+    var written = [];
+    var timing = {resolve_ms: 0, write_ms: 0, readback_ms: 0, total_ms: 0};
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
         var changes = normalizeChanges(payload);
-        var resolved = [];
         var results = [];
 
+        var resolveStartedAt = nowMs();
         for (var index = 0; index < changes.length; index += 1) {
             resolved.push(preflightChange(changes[index], index));
         }
+        timing.resolve_ms = nowMs() - resolveStartedAt;
 
         if (!dryRun) {
             for (var identityIndex = 0; identityIndex < resolved.length; identityIndex += 1) {
-                if (resolved[identityIndex].track.section !== "track" && Number(changes[identityIndex].track_id) !== resolved[identityIndex].track.id) {
-                    throw new Error("Commit to Return/Main requires track_id from the preceding dry-run");
-                }
                 if (resolved[identityIndex].device_record && resolved[identityIndex].device_record.depth > 0) {
                     if (changes[identityIndex].track_id === undefined || changes[identityIndex].device_id === undefined || changes[identityIndex].parameter_id === undefined) {
-                        throw new Error("Commit to a nested device requires track_id, device_id, and parameter_id from the preceding dry-run");
+                        throw new Error("Apply to a nested device requires stable track_id, device_id, and parameter_id");
                     }
                 }
             }
         }
 
         if (!dryRun) {
+            var writeStartedAt = nowMs();
             for (var writeIndex = 0; writeIndex < resolved.length; writeIndex += 1) {
                 resolved[writeIndex].parameter.api.set("value", resolved[writeIndex].value);
+                written.push(resolved[writeIndex]);
             }
+            timing.write_ms = nowMs() - writeStartedAt;
         }
 
+        var readbackStartedAt = nowMs();
         for (var resultIndex = 0; resultIndex < resolved.length; resultIndex += 1) {
             var after = parameterInfo(
                 resolved[resultIndex].parameter.api,
                 resolved[resultIndex].parameter.index,
                 resolved[resultIndex].parameter.id
             );
+            if (!dryRun && !valuesEqual(after.value, resolved[resultIndex].value)) {
+                throw new Error("readback_mismatch at change " + resultIndex);
+            }
             if (dryRun) {
                 after.value = resolved[resultIndex].value;
                 AbletonAgentValueDisplay.attachTarget(
@@ -406,20 +446,55 @@ function setParameters(requestId, payloadText, mode) {
             }
             results.push(resultForResolved(resolved[resultIndex], after));
         }
+        timing.readback_ms = nowMs() - readbackStartedAt;
+        timing.total_ms = nowMs() - startedAt;
+
+        var restoreChanges = [];
+        if (!dryRun) {
+            for (var receiptIndex = 0; receiptIndex < resolved.length; receiptIndex += 1) {
+                var currentValue = Number(valueOf(resolved[receiptIndex].parameter.api.get("value"), 0));
+                restoreChanges.push(restoreChange(resolved[receiptIndex], currentValue));
+            }
+        }
 
         outlet(0, [requestId, JSON.stringify({
             ok: true,
             dry_run: dryRun,
             applied: !dryRun,
+            operation: dryRun ? "inspect" : "apply",
+            inspection_kind: dryRun ? "target_and_projected_value" : null,
+            simulated: false,
             change_count: results.length,
             results: results,
-            message: dryRun ? "Ready to set; rerun with commit to change the Set" : "Parameters updated"
+            timings: timing,
+            undo_receipt: dryRun ? null : {
+                operation_id: requestId,
+                route: "/set_parameters",
+                restore_changes: restoreChanges
+            },
+            message: dryRun ? "Targets inspected; no Live state changed" : "Parameters updated and read back"
         })]);
     } catch (error) {
+        var rollbackErrors = [];
+        if (!dryRun && written.length) {
+            for (var rollbackIndex = written.length - 1; rollbackIndex >= 0; rollbackIndex -= 1) {
+                try {
+                    written[rollbackIndex].parameter.api.set("value", written[rollbackIndex].before.value);
+                } catch (rollbackError) {
+                    rollbackErrors.push(rollbackError && rollbackError.message ? rollbackError.message : String(rollbackError));
+                }
+            }
+        }
+        timing.total_ms = nowMs() - startedAt;
         outlet(0, [requestId, JSON.stringify({
             ok: false,
             dry_run: dryRun,
             applied: false,
+            operation: dryRun ? "inspect" : "apply",
+            rolled_back: !dryRun && written.length > 0 && rollbackErrors.length === 0,
+            rollback_errors: rollbackErrors,
+            completed_before_failure: written.length,
+            timings: timing,
             error: error && error.message ? error.message : String(error)
         })]);
     }

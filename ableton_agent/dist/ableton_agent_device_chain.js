@@ -4,6 +4,7 @@ outlets = 1;
 
 include("ableton_agent_device_tree.js");
 include("ableton_agent_value_display.js");
+include("ableton_agent_read_core.js");
 
 var CHAIN_TEMPLATES = {
     drum_bus_clean: ["Drum Buss", "Glue Compressor"],
@@ -97,17 +98,24 @@ function trackIds() {
 }
 
 function resolveTrack(payload) {
-    var ids = trackIds();
+    var section = normalize(payload.section || "track");
+    if (section === "master") { section = "main"; }
+    if (["track", "return", "main"].indexOf(section) < 0) {
+        throw new Error("section must be track, return, or main");
+    }
+    var song = new LiveAPI(function () {}, "live_set");
+    var ids = idsFrom(song.get(section === "main" ? "master_track" : section === "return" ? "return_tracks" : "tracks"));
     if (payload.track_id !== undefined && payload.track_id !== null && payload.track_id !== "") {
         var requestedId = Number(payload.track_id);
         var idIndex = ids.indexOf(requestedId);
         if (idIndex < 0) {
-            throw new Error("track_id is not in the ordinary track list");
+            throw new Error("track_id is not in the requested " + section + " section");
         }
         var byId = new LiveAPI(function () {}, "id " + requestedId);
-        return {index: idIndex, id: requestedId, name: String(valueOf(byId.get("name"), "")), api: byId};
+        return {section: section, index: idIndex, id: requestedId, name: String(valueOf(byId.get("name"), "")), api: byId};
     }
     var selector = payload.track_index !== undefined ? payload.track_index : payload.track;
+    if (section === "main" && selector === undefined && payload.track_name === undefined) { selector = 0; }
     if (selector === undefined || selector === null || selector === "") {
         selector = payload.track_name;
     }
@@ -120,14 +128,14 @@ function resolveTrack(payload) {
             throw new Error("track_index is outside the ordinary track list");
         }
         var byIndex = new LiveAPI(function () {}, "id " + ids[index]);
-        return {index: index, id: ids[index], name: String(valueOf(byIndex.get("name"), "")), api: byIndex};
+        return {section: section, index: index, id: ids[index], name: String(valueOf(byIndex.get("name"), "")), api: byIndex};
     }
     var wanted = normalize(selector);
     for (var namedIndex = 0; namedIndex < ids.length; namedIndex += 1) {
         var track = new LiveAPI(function () {}, "id " + ids[namedIndex]);
         var name = String(valueOf(track.get("name"), ""));
         if (normalize(name) === wanted) {
-            return {index: namedIndex, id: ids[namedIndex], name: name, api: track};
+            return {section: section, index: namedIndex, id: ids[namedIndex], name: name, api: track};
         }
     }
     throw new Error("Track not found: " + selector);
@@ -145,6 +153,7 @@ function scanRecursive(payload) {
         ? AbletonAgentDeviceTree.scanTrack(track.api, scanOptions)
         : AbletonAgentDeviceTree.scanSubtree(track.api, rootDeviceId, scanOptions);
     return {
+        section: track.section,
         track_index: track.index,
         track_id: track.id,
         track_name: track.name,
@@ -346,7 +355,7 @@ function handleDeviceChain(requestId, payloadText, mode) {
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
         var action = String(payload.action || "list_templates");
-        var allowed = ["list_templates", "scan_recursive", "apply_template", "apply_parameter_preset"];
+        var allowed = ["list_templates", "scan_recursive", "scan_children", "apply_template", "apply_parameter_preset"];
         if (allowed.indexOf(action) < 0) {
             throw new Error("action must be list_templates, scan_recursive, apply_template, or apply_parameter_preset");
         }
@@ -359,6 +368,15 @@ function handleDeviceChain(requestId, payloadText, mode) {
                 templates: templates(),
                 message: "Device chain templates listed"
             })]);
+            return;
+        }
+        if (action === "scan_children") {
+            if (!dryRun) { throw new Error("scan_children is read-only"); }
+            var pageTrack = resolveTrack(payload);
+            var page = AbletonAgentDeviceTree.scanChildren(pageTrack.api, payload);
+            page.section = pageTrack.section;
+            page.track_id = pageTrack.id;
+            outlet(0, [requestId, JSON.stringify({ok: true, dry_run: true, applied: false, action: action, tree: page})]);
             return;
         }
         if (action === "scan_recursive") {
@@ -374,6 +392,9 @@ function handleDeviceChain(requestId, payloadText, mode) {
                 message: "Recursive device tree scanned"
             })]);
             return;
+        }
+        if (normalize(payload.section || "track") !== "track") {
+            throw new Error("Special-track device_chain writes are not enabled; use validated insertion/parameter routes");
         }
         var result = action === "apply_parameter_preset"
             ? applyParameterPreset(payload, dryRun)

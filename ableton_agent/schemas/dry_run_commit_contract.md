@@ -1,16 +1,25 @@
-# Dry-Run And Commit Contract
+# Dry-Run And Commit Compatibility Contract
 
-All write-capable commands default to dry-run.
+The authoritative execution model is
+`risk_based_execution_contract.md`. Existing Hub wire modes remain compatible:
 
-Dry-run must:
+- `dry_run` means inspect without changing Live.
+- `commit` means apply and verify.
+
+Python clients may expose these as `inspect` and `apply`. Low-risk scalar writes
+can default to guarded apply; destructive actions continue to inspect first and
+use stable identities or plan tokens where supported.
+
+Inspection/dry-run must:
 
 - validate target objects and payload shape
-- report what would change
+- report targets, projected scalar values, or destructive impact
 - avoid changing the Live Set
+- never claim it simulated audible or structural post-state
 - return stable target ids for Return/Main writes and the current Return id list
   before Return creation
 
-Commit must:
+Apply/commit must:
 
 - perform only the validated action
 - report the changed target and after-state when practical
