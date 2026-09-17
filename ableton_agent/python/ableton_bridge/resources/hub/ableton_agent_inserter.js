@@ -1,4 +1,19 @@
 autowatch = 1;
+include("ableton_agent_health.js");
+include("ableton_agent_creative_control.js");
+function prepareCreativeInserter(p) {
+    var t=AgentCreative.track(p), before=AgentCreative.ids(t.api.get("devices"));
+    var plan=p.kind==="effect"?effectInsertPlan(t,p.device,false):trackInsertPlan(t,p.device,false,"");
+    if(!plan.ok) { throw new Error(plan.reason || "Insertion is not allowed"); }
+    if(p.kind!=="effect" && t.section!=="track") { throw new Error("Instrument needs ordinary MIDI track"); }
+    return {state:before,plan:plan,apply:function() {
+        t.api.call("insert_device",p.kind==="effect"?plan.resolved_effect:plan.resolved_device);
+        var after=AgentCreative.ids(t.api.get("devices"));
+        var created=after.filter(function(x){return before.indexOf(x)<0;});
+        if(created.length!==1 || after.length!==before.length+1) { throw new Error("Insertion readback expected one device"); }
+        return {track_id:t.id,device_id:created[0],before_device_ids:before,after_device_ids:after,verified:true};
+    }};
+}
 inlets = 1;
 outlets = 1;
 
@@ -629,6 +644,15 @@ function insertEffect(requestId, payloadText, mode) {
     var dryRun = String(mode || "dry_run") !== "commit";
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
+        if (payload.action === "_module_health") {
+            AgentHealth.reply(requestId, "insertion", mode, function(id, result) {
+                emit("insert_effect", id, result);
+            }); return;
+        }
+        if(payload.mcp_safe!==undefined) {
+            AgentCreative.handle("insert_effect",requestId,payload,mode,prepareCreativeInserter,function(id,result){emit("insert_effect",id,result);});
+            return;
+        }
         var trackRef = resolveEffectTrack(payload);
         requireStableSpecialTarget(payload, trackRef, dryRun);
         var requestedEffect = payload.effect || payload.role || payload.device;

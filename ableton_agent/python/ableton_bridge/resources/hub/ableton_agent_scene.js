@@ -1,4 +1,34 @@
 autowatch = 1;
+include("ableton_agent_creative_control.js");
+function prepareCreativeScene(p) {
+    var s=AgentCreative.song(), ids=AgentCreative.ids(s.get("scenes"));
+    var target=null, state=ids.slice();
+    if (p.action === "list") {
+        var cursor=p.cursor || 0, limit=p.limit || 16;
+        if (cursor>ids.length || limit<1 || limit>32) { throw new Error("Invalid scene page"); }
+        var rows=[];
+        for(var i=cursor;i<Math.min(ids.length,cursor+limit);i+=1) { rows.push(sceneInfo(i,ids[i])); }
+        return {read_only:true,state:ids,plan:{scenes:rows,next_cursor:cursor+rows.length<ids.length?cursor+rows.length:null}};
+    }
+    if (["create","duplicate","rename","fire"].indexOf(p.action)<0) { throw new Error("Unsupported scene action"); }
+    if (p.action!=="create") { target=AgentCreative.scene(p.scene_id); state.push(sceneInfo(target.index,target.id)); }
+    var plan={action:p.action,scene_id:p.scene_id,name:p.name,scene_count:ids.length};
+    return {state:state,plan:plan,apply:function() {
+        var id=target?target.id:null;
+        if(p.action==="create") { s.call("create_scene",-1); }
+        if(p.action==="duplicate") { s.call("duplicate_scene",target.index); }
+        if(p.action==="create" || p.action==="duplicate") {
+            var added=AgentCreative.ids(s.get("scenes")).filter(function(x){return ids.indexOf(x)<0;});
+            if(added.length!==1) { throw new Error("Expected one new Scene"); } id=added[0];
+        }
+        var sc=AgentCreative.scene(id);
+        if(p.action==="fire") { sc.api.call("fire"); return {scene_id:id,fire_requested:true,playback_verified:false}; }
+        if(p.name) { sc.api.set("name",p.name); }
+        var result=sceneInfo(sc.index,id);
+        if(p.name && result.scene_name!==p.name) { throw new Error("Scene name readback mismatch"); }
+        result.verified=true; return result;
+    }};
+}
 inlets = 1;
 outlets = 1;
 
@@ -220,6 +250,10 @@ function handleScene(requestId, payloadText, mode) {
     var dryRun = String(mode || "dry_run") !== "commit";
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
+        if (payload.mcp_safe !== undefined) {
+            AgentCreative.handle("scene", requestId, payload, mode, prepareCreativeScene, agentCreativeEmit);
+            return;
+        }
         var action = String(payload.action || "list");
         var allowed = ["list", "create", "duplicate", "rename", "capture_midi", "fire"];
         if (allowed.indexOf(action) < 0) {

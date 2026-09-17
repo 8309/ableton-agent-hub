@@ -25,6 +25,8 @@ def summarize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     )
     return {
         "action": payload.get("action"),
+        "trace_level": payload.get("trace_level", "none"),
+        "query": str(payload.get("query", ""))[:256],
         "target": {key: payload[key] for key in target_keys if key in payload},
         "read": {
             key: read.get(key)
@@ -44,6 +46,7 @@ def begin_request(request_id: str, route: str, payload: dict[str, Any]) -> None:
             entry["page_requests"] = int(entry.get("page_requests", 1)) + 1
             entry["payload"] = summarize_payload(payload)
             entry["last_checkpoint"] = {"stage": "request_created", "layer": "python"}
+            entry.pop("last_hub_checkpoint", None)
             return
     entry = {
         "request_id": request_id,

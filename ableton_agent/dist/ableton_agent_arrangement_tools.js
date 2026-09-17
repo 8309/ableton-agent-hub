@@ -1,4 +1,48 @@
 autowatch = 1;
+include("ableton_agent_creative_control.js");
+
+function prepareCreativeArrangement(p) {
+    if (["move_audio_clip", "copy_midi_clip"].indexOf(p.action) < 0) { throw new Error("Unsupported safe Arrangement action"); }
+    if (typeof p.target_start !== "number" || !isFinite(p.target_start) || p.target_start < 0 || p.target_start > 1576800) {
+        throw new Error("Invalid target_start");
+    }
+    if (p.action === "move_audio_clip") {
+        if (p.name !== undefined) { throw new Error("Move does not rename"); }
+        var preview = moveAudioClip(p, true);
+        var nativeToken = preview.plan_token;
+        delete preview.plan_token;
+        preview.warning = "Same-track native duplicate/delete move; source ID can change. Fingerprint verification is not a full envelope/sample backup.";
+        // Reuse the existing move checks/readback; do not rescan unrelated Clip properties here.
+        return {state:preview, plan:preview, apply:function () {
+            var result = moveAudioClip({track_id:p.track_id, clip_id:p.clip_id,
+                target_start:p.target_start, plan_token:nativeToken}, false);
+            result.clip_id = result.no_op ? p.clip_id : result.after_clip_id;
+            result.verified = true;
+            return result;
+        }};
+    }
+    var t = AgentCreative.track(p), c = AgentCreative.clip(t, p.clip_id, true);
+    if (t.section !== "track") { throw new Error("Ordinary track required"); }
+    var ns = AgentCreative.notes(c), length = Number(AgentCreative.value(c.get("length")));
+    if (Number(AgentCreative.value(c.get("loop_start"))) !== 0 ||
+        Number(AgentCreative.value(c.get("start_marker"))) !== 0 ||
+        Math.abs(Number(AgentCreative.value(c.get("loop_end"))) - length) > 0.0001) {
+        throw new Error("MIDI copy requires a zero-origin single-loop source");
+    }
+    if (p.target_start + length > 1576800) { throw new Error("Destination exceeds Arrangement range"); }
+    var copied = ns.map(function (note) {
+        var out = {};
+        for (var k in note) { if (k !== "note_id") { out[k] = note[k]; } }
+        return out;
+    });
+    var name = p.name || String(AgentCreative.value(c.get("name"))) + " Copy";
+    var work = AgentCreative.newClip(t, {location:"arrangement",start:p.target_start,length:length,name:name}, copied);
+    work.state = [ns, length, name, work.state];
+    work.plan.action = p.action;
+    work.plan.source_clip_id = p.clip_id;
+    work.plan.warning = "Note-data copy only; no Clip envelopes, MPE or launch settings. Source remains untouched.";
+    return work;
+}
 inlets = 1;
 outlets = 1;
 
@@ -637,6 +681,10 @@ function handleArrangementTools(requestId, payloadText, mode) {
     var dryRun = String(mode || "dry_run") !== "commit";
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
+        if (payload.mcp_safe !== undefined) {
+            AgentCreative.handle("arrangement_tools", requestId, payload, mode, prepareCreativeArrangement, agentCreativeEmit);
+            return;
+        }
         var action = String(payload.action || "scan_region");
         var allowed = ["scan_region", "clear_region", "copy_region", "duplicate_region", "rename_region_clip", "move_audio_clip"];
         if (allowed.indexOf(action) < 0) {

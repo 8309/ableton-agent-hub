@@ -32,8 +32,8 @@ The detailed shape is defined in
 
 Modes:
 
-- `dry_run`: preview for write-capable commands; the default.
-- `commit`: explicit request to apply the reviewed plan.
+- `dry_run`: optional read-only validation (legacy wire name).
+- `commit`: explicit apply. MCP maps user-requested writes to apply directly.
 
 Replies should include `ok`, `dry_run`, `request_id`, and either a useful result
 or a clear error. A mutating command should resolve its target before commit and
@@ -45,9 +45,9 @@ read the changed state back where possible.
    `ableton-agent install`.
 2. Load one Hub device in the open Set.
 3. Run `ableton-agent ping`.
-4. Run a read or dry-run command.
-5. Review the resolved object ID, name, section, and proposed values.
-6. Run the equivalent command with `--commit` only when the target is correct.
+4. Read directly, or apply an explicit user-requested change.
+5. Resolve the object ID, name and section; preserve before-state.
+6. Use `--commit` for legacy CLI writes. A separate dry-run is optional.
 7. Inspect Live and the structured readback.
 
 Send commands sequentially. All clients share reply port `7401`.

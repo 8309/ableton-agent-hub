@@ -8,6 +8,7 @@ import uuid
 from typing import Any
 
 from .osc import OscDecodeError, decode_message, encode_message
+from .reply_port_lock import reply_port_lock
 
 
 class DeviceChainError(RuntimeError):
@@ -28,7 +29,16 @@ def device_chain(
     timeout: float = 3.0,
     **payload_fields: Any,
 ) -> dict[str, Any]:
-    if action == "scan_recursive":
+    if action in {"scan_recursive", "scan_children"}:
+        if commit:
+            raise DeviceChainError("device scans are read-only")
+        if payload_fields.get("section", "track") not in {"track", "return", "main", "master"}:
+            raise DeviceChainError("section must be track, return, or main")
+        for key, low, high in (("cursor", 0, 65536), ("limit", 1, 32),
+                               ("max_depth", 0, 12), ("max_devices", 1, 512)):
+            value = payload_fields.get(key)
+            if value is not None and (type(value) is not int or not low <= value <= high):
+                raise DeviceChainError(f"{key} must be an integer from {low} to {high}")
         root_device_id = payload_fields.get("root_device_id")
         budget_ms = payload_fields.get("budget_ms")
         if root_device_id is not None and (not isinstance(root_device_id, int) or root_device_id <= 0):
@@ -44,7 +54,7 @@ def _request(payload: dict[str, Any], *, commit: bool, host: str, command_port: 
     request_id = uuid.uuid4().hex
     mode = "commit" if commit else "dry_run"
     packet = encode_message("/device_chain", [request_id, json.dumps(payload, ensure_ascii=False), mode])
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
+    with reply_port_lock(reply_port, timeout=timeout), socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
         reply_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         reply_socket.bind((host, reply_port))
         reply_socket.settimeout(min(timeout, 0.2))
@@ -77,7 +87,11 @@ def _request(payload: dict[str, Any], *, commit: bool, host: str, command_port: 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Inspect Rack device trees or apply safe Ableton device chain templates")
-    parser.add_argument("--action", default="list_templates", choices=["list_templates", "scan_recursive", "apply_template", "apply_parameter_preset"])
+    parser.add_argument("--action", default="list_templates", choices=["list_templates", "scan_recursive", "scan_children", "apply_template", "apply_parameter_preset"])
+    parser.add_argument("--section", choices=["track", "return", "main", "master"], default="track")
+    parser.add_argument("--cursor", type=int)
+    parser.add_argument("--limit", type=int)
+    parser.add_argument("--collection-token")
     parser.add_argument("--template")
     parser.add_argument("--preset")
     parser.add_argument("--track")
@@ -108,6 +122,10 @@ def main() -> int:
             track=int(args.track) if args.track and args.track.isdigit() else args.track,
             track_index=args.track_index,
             track_id=args.track_id,
+            section=args.section,
+            cursor=args.cursor,
+            limit=args.limit,
+            expected_collection_token=args.collection_token,
             max_depth=args.max_depth,
             max_devices=args.max_devices,
             root_device_id=args.root_device_id,

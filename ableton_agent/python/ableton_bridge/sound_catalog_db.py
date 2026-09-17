@@ -501,6 +501,8 @@ def build_catalog_database(
                 int(summary.get("pack_count", 0)), int(summary.get("resource_count", 0)),
             ),
         )
+        from .audio_similarity import preserve_cache
+        preserve_cache(connection, destination)
         connection.commit()
     except Exception:
         connection.rollback()

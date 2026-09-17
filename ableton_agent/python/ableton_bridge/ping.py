@@ -8,6 +8,7 @@ import uuid
 from typing import Any
 
 from .osc import OscDecodeError, decode_message, encode_message
+from .reply_port_lock import reply_port_lock
 
 
 class PingError(RuntimeError):
@@ -27,7 +28,7 @@ def ping(
     request_id = uuid.uuid4().hex
     packet = encode_message("/ping", [request_id])
 
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
+    with reply_port_lock(reply_port, timeout=timeout), socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
         reply_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         reply_socket.bind((host, reply_port))
         reply_socket.settimeout(min(timeout, 0.2))
@@ -40,8 +41,8 @@ def ping(
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise PingTimeoutError(
-                    f"No pong from Ableton Agent Hub on UDP {reply_port}; "
-                    "load or reload Ableton Agent Hub.amxd in the current Set"
+                    f"Ableton Agent Hub did not respond on UDP {reply_port}; "
+                    "load Ableton Agent Hub.amxd in the current Live Set"
                 )
             reply_socket.settimeout(min(remaining, 0.2))
             try:

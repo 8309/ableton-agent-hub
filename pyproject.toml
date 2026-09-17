@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ableton-agent-hub"
-version = "0.3.0a0"
+version = "0.4.0a0"
 description = "Local Max for Live bridge and safe Python toolkit for Ableton Live"
 readme = "README.md"
 license = "MIT"
@@ -25,8 +25,12 @@ classifiers = [
 [project.scripts]
 ableton-agent = "ableton_bridge.cli:main"
 
+[project.optional-dependencies]
+mcp = ["mcp==2.0.0"]
+audio = ["numpy==2.2.6", "soundfile==0.13.1"]
+
 [tool.setuptools.packages.find]
 where = ["ableton_agent/python"]
 
 [tool.setuptools.package-data]
-"ableton_bridge.resources.hub" = ["*.amxd", "*.js"]
+"ableton_bridge.resources.hub" = ["*.amxd", "*.js", "*.json"]

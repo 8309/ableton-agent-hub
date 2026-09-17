@@ -29,7 +29,39 @@ var AbletonAgentParameterDiagnostics = (function () {
                 state.property = details.property;
             }
         }
+        emitProgress(state);
         return state;
+    }
+
+    function configure(state, level, emitter, cursor) {
+        level = level || "none";
+        if (["none", "page", "parameter", "field"].indexOf(level) < 0) {
+            throw new Error("trace_level must be none, page, parameter, or field");
+        }
+        state.trace_level = level;
+        state.emitter = emitter;
+        state.cursor = cursor;
+        state.progress_sequence = 0;
+        mark(state, "hub_received");
+    }
+
+    function emitProgress(state) {
+        if (!state.emitter || !state.trace_level || state.trace_level === "none") { return; }
+        var field = state.stage.indexOf("parameter_field_") === 0;
+        var parameter = state.stage === "parameter_started" || state.stage === "parameter_completed";
+        if (field && state.trace_level !== "field") { return; }
+        if (parameter && state.trace_level === "page") { return; }
+        state.progress_sequence += 1;
+        var checkpoint = {stage: state.stage, operation: state.operation,
+            parameter: state.parameter, property: state.property, cursor: state.cursor,
+            hub_elapsed_ms: Math.max(0, now() - state.started_ms)};
+        // Keep each UDP checkpoint small; failure to emit must not break a read.
+        if (checkpoint.parameter && checkpoint.parameter.name) {
+            checkpoint.parameter = {id: checkpoint.parameter.id, index: checkpoint.parameter.index,
+                name: String(checkpoint.parameter.name).slice(0, 96)};
+        }
+        try { state.emitter({kind: "progress", request_id: state.request_id,
+            sequence: state.progress_sequence, checkpoint: checkpoint}); } catch (_error) {}
     }
 
     function snapshot(state) {
@@ -39,6 +71,8 @@ var AbletonAgentParameterDiagnostics = (function () {
             operation: state.operation,
             parameter: state.parameter,
             property: state.property,
+            trace_level: state.trace_level || "none",
+            progress_emitted: state.progress_sequence || 0,
             hub_elapsed_ms: Math.max(0, now() - state.started_ms),
             stage_timings_ms: state.stage_timings_ms
         };
@@ -84,6 +118,7 @@ var AbletonAgentParameterDiagnostics = (function () {
         var diagnostic = error && error.diagnostic ? error.diagnostic : snapshot(state);
         return {
             ok: false,
+            kind: "final",
             request_id: state.request_id,
             error_code: classify(state, error),
             error_layer: "hub",
@@ -144,7 +179,23 @@ var AbletonAgentParameterDiagnostics = (function () {
         }
     }
 
+    function tracedApi(api, state, operation, parameter) {
+        if (state.trace_level !== "field") { return api; }
+        return {
+            get: function (property) {
+                return readProperty(api, property, state, operation, parameter);
+            },
+            call: function (method, value) {
+                return runField(state, operation, parameter, method, function () {
+                    return api.call(method, value);
+                });
+            }
+        };
+    }
+
     return {
+        configure: configure,
+        tracedApi: tracedApi,
         create: create,
         mark: mark,
         snapshot: snapshot,

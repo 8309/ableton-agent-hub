@@ -9,7 +9,11 @@ param(
     [int]$MaxNoteClips = 512,
     [double]$Timeout = 5.0,
     [double]$PingTimeout = 1.5,
-    [double]$TotalTimeout = 30.0
+    [double]$TotalTimeout = 30.0,
+    [string]$AlsPath,
+    [string]$SavedSections,
+    [switch]$IncludeSavedDeviceParameters,
+    [switch]$IncludeSavedMidiNotes
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,25 +45,8 @@ if ($liveProcesses.Count -eq 0) {
     exit 1
 }
 
-function Resolve-AgentPython {
-    if ($env:ABLETON_AGENT_PYTHON -and (Test-Path -LiteralPath $env:ABLETON_AGENT_PYTHON)) {
-        return $env:ABLETON_AGENT_PYTHON
-    }
-
-    $bundled = Join-Path $env:USERPROFILE ".cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
-    if (Test-Path -LiteralPath $bundled) {
-        return $bundled
-    }
-
-    $python = Get-Command python -ErrorAction SilentlyContinue
-    if ($python) {
-        return $python.Source
-    }
-
-    throw "No Python interpreter found. Set ABLETON_AGENT_PYTHON to python.exe."
-}
-
-$pythonExe = Resolve-AgentPython
+. (Join-Path $PSScriptRoot 'agent_python.ps1')
+$pythonExe = Resolve-AgentPython -RepoRoot $repoRoot
 $previousPythonPath = $env:PYTHONPATH
 $env:PYTHONPATH = if ($previousPythonPath) {
     "$bridgeRoot;$previousPythonPath"
@@ -76,6 +63,18 @@ $arguments = @(
     "--ping-timeout", $PingTimeout,
     "--total-timeout", $TotalTimeout
 )
+if ($AlsPath) {
+    $arguments += @("--als-path", $AlsPath)
+}
+if ($SavedSections) {
+    $arguments += @("--saved-sections", $SavedSections)
+}
+if ($IncludeSavedDeviceParameters) {
+    $arguments += "--include-saved-device-parameters"
+}
+if ($IncludeSavedMidiNotes) {
+    $arguments += "--include-saved-midi-notes"
+}
 if ($pythonDepth -eq "full") {
     $arguments += @("--quick-output", $quickOutput)
 }

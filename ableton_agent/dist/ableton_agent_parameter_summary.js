@@ -1,6 +1,7 @@
 autowatch = 1;
+include("ableton_agent_health.js");
 inlets = 1;
-outlets = 1;
+outlets = 2;
 
 include("ableton_agent_read_core.js");
 include("ableton_agent_device_tree.js");
@@ -321,11 +322,6 @@ function projectedParameterInfo(parameterId, index, name, read, diagnostics) {
     var parameter = new LiveAPI(function () {}, "id " + parameterId);
     var result = {};
     var parameterContext = {index: index, id: parameterId, name: name};
-    AbletonAgentParameterDiagnostics.mark(diagnostics, "parameter_started", {
-        operation: "identity",
-        parameter: parameterContext,
-        property: "name"
-    });
     var needsValue = AbletonAgentReadCore.has(read, "internal_value") || AbletonAgentReadCore.has(read, "display_value");
     var needsMetadata = AbletonAgentReadCore.has(read, "metadata") || AbletonAgentReadCore.has(read, "enum_values");
     var value = needsValue ? Number(valueOf(AbletonAgentParameterDiagnostics.readProperty(
@@ -343,9 +339,14 @@ function projectedParameterInfo(parameterId, index, name, read, diagnostics) {
     var isEnabled = needsMetadata ? Boolean(Number(valueOf(AbletonAgentParameterDiagnostics.readProperty(
         parameter, "is_enabled", diagnostics, "metadata", parameterContext
     ), 1))) : null;
-    var automationState = needsMetadata ? Number(valueOf(AbletonAgentParameterDiagnostics.readProperty(
+    var needsAutomation = AbletonAgentReadCore.has(read, "automation_state");
+    var automationState = needsMetadata || needsAutomation ? valueOf(AbletonAgentParameterDiagnostics.readProperty(
         parameter, "automation_state", diagnostics, "metadata", parameterContext
-    ), 0)) : null;
+    ), null) : null;
+    if (needsAutomation && (automationState === null || [0, 1, 2].indexOf(Number(automationState)) < 0)) {
+        throw new Error("Missing or invalid automation_state for parameter " + parameterId);
+    }
+    automationState = automationState === null ? 0 : Number(automationState);
     if (AbletonAgentReadCore.has(read, "identity")) {
         result.index = index;
         result.id = parameterId;
@@ -356,6 +357,8 @@ function projectedParameterInfo(parameterId, index, name, read, diagnostics) {
         result.max = maximum;
         result.is_quantized = isQuantized;
         result.is_enabled = isEnabled;
+    }
+    if (AbletonAgentReadCore.has(read, "metadata") || needsAutomation) {
         result.automation_state = automationState;
         result.automation_state_name = automationStateName(automationState);
     }
@@ -365,7 +368,8 @@ function projectedParameterInfo(parameterId, index, name, read, diagnostics) {
     if (AbletonAgentReadCore.has(read, "display_value")) {
         AbletonAgentParameterDiagnostics.runField(
             diagnostics, "display_value", parameterContext, "display_value/str_for_value", function () {
-                return AbletonAgentValueDisplay.attachCurrent(result, parameter, value);
+                return AbletonAgentValueDisplay.attachCurrent(result,
+                    AbletonAgentParameterDiagnostics.tracedApi(parameter, diagnostics, "display_value", parameterContext), value);
             }
         );
     }
@@ -373,7 +377,7 @@ function projectedParameterInfo(parameterId, index, name, read, diagnostics) {
         result.enum_values = AbletonAgentParameterDiagnostics.runField(
             diagnostics, "enum_values", parameterContext, "str_for_value", function () {
                 return isQuantized
-                    ? enumValues(parameter, minimum, maximum)
+                    ? enumValues(AbletonAgentParameterDiagnostics.tracedApi(parameter, diagnostics, "enum_values", parameterContext), minimum, maximum)
                     : {available: false, reason: "parameter is not quantized", values: []};
             }
         );
@@ -400,7 +404,7 @@ function readDeviceParameterPageBounded(requestId, payload, mode, diagnostics) {
         max_limit: MAX_PARAMETERS_PER_DEVICE,
         max_cursor: MAX_PARAMETER_SCAN,
         default_limit: DEFAULT_BOUNDED_PARAMETER_LIMIT,
-        allowed_projection: ["identity", "metadata", "internal_value", "display_value", "enum_values"],
+        allowed_projection: ["identity", "metadata", "internal_value", "display_value", "enum_values", "automation_state"],
         default_projection: ["identity", "metadata", "internal_value"]
     });
     AbletonAgentParameterDiagnostics.mark(diagnostics, "payload_validated");
@@ -419,7 +423,8 @@ function readDeviceParameterPageBounded(requestId, payload, mode, diagnostics) {
             "lom_collection_read_failed", "LiveAPI parameter collection read failed", diagnostics, collectionError
         );
     }
-    var parameterIds = idsFrom(rawParameterIds).slice(0, MAX_PARAMETER_SCAN);
+    var allParameterIds = idsFrom(rawParameterIds);
+    var parameterIds = allParameterIds.slice(0, MAX_PARAMETER_SCAN);
     AbletonAgentParameterDiagnostics.mark(diagnostics, "parameter_collection_loaded");
     var token = AbletonAgentReadCore.collectionToken(parameterIds);
     AbletonAgentParameterDiagnostics.mark(diagnostics, "collection_token_verifying");
@@ -442,6 +447,9 @@ function readDeviceParameterPageBounded(requestId, payload, mode, diagnostics) {
         var parameterId = parameterIds[rawIndex];
         var parameter = new LiveAPI(function () {}, "id " + parameterId);
         var parameterContext = {index: rawIndex, id: parameterId, name: null};
+        AbletonAgentParameterDiagnostics.mark(diagnostics, "parameter_started", {
+            parameter: parameterContext, operation: "identity", property: "name"
+        });
         var name = String(valueOf(AbletonAgentParameterDiagnostics.readProperty(
             parameter, "name", diagnostics, "identity", parameterContext
         ), ""));
@@ -449,6 +457,10 @@ function readDeviceParameterPageBounded(requestId, payload, mode, diagnostics) {
         scanned += 1;
         if (action === "list_parameters" || normalize(name).indexOf(query) >= 0) {
             parameters.push(projectedParameterInfo(parameterId, rawIndex, name, read, diagnostics));
+        } else {
+            AbletonAgentParameterDiagnostics.mark(diagnostics, "parameter_completed", {
+                parameter: parameterContext, operation: null, property: null
+            });
         }
     }
     var nextCursor = read.cursor + scanned;
@@ -460,11 +472,12 @@ function readDeviceParameterPageBounded(requestId, payload, mode, diagnostics) {
         has_more: hasMore,
         partial: partial,
         collection_token: token,
-        warnings: []
+        warnings: allParameterIds.length > MAX_PARAMETER_SCAN ? ["Parameter collection exceeds scan cap; inventory is incomplete"] : []
     });
     AbletonAgentParameterDiagnostics.mark(diagnostics, "page_completed");
     var response = {
         ok: true,
+        kind: "final",
         request_id: requestId,
         dry_run: true,
         action: action,
@@ -499,7 +512,9 @@ function readDeviceParameterPageBounded(requestId, payload, mode, diagnostics) {
     };
     AbletonAgentParameterDiagnostics.mark(diagnostics, "reply_serializing");
     response.diagnostics = AbletonAgentParameterDiagnostics.snapshot(diagnostics);
-    outlet(0, [requestId, JSON.stringify(response)]);
+    var serialized = JSON.stringify(response);
+    AbletonAgentParameterDiagnostics.mark(diagnostics, "reply_serialized");
+    outlet(0, [requestId, serialized]);
 }
 
 
@@ -569,11 +584,17 @@ function readParameterSummary(requestId, payloadText, mode) {
     var diagnostics = AbletonAgentParameterDiagnostics.create(requestId);
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
+        if (payload.action === "_module_health") {
+            AgentHealth.reply(requestId, "parameters", mode); return;
+        }
         if (payload.request_id !== undefined && String(payload.request_id) !== String(requestId)) {
             throw AbletonAgentParameterDiagnostics.failure(
                 "hub_route_failed", "OSC request_id does not match payload request_id", diagnostics, null
             );
         }
+        AbletonAgentParameterDiagnostics.configure(diagnostics, payload.trace_level, function (packet) {
+            outlet(1, [requestId, JSON.stringify(packet)]);
+        }, payload.read ? payload.read.cursor : payload.offset);
         AbletonAgentParameterDiagnostics.mark(diagnostics, "payload_validated");
         var action = normalize(payload.action || "summary");
         if (action === "list_parameters" || action === "search_parameters") {

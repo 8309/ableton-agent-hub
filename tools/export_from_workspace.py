@@ -14,6 +14,11 @@ from typing import Iterable
 
 
 HUB_JAVASCRIPT = (
+    "ableton_agent_dashboard.js",
+    "ableton_agent_status_panel.js",
+    "ableton_agent_health.js",
+    "ableton_agent_creative_control.js",
+    "ableton_agent_ui_input.js",
     "ableton_agent_read_core.js",
     "ableton_agent_snapshot.js",
     "ableton_agent_parameter_summary.js",
@@ -44,13 +49,27 @@ HUB_JAVASCRIPT = (
 
 STATIC_FILES = (
     "ableton_agent/max/agent_hub.maxpat.json",
-    "ableton_agent/dist/Ableton Agent Hub.amxd",
+    "ableton_agent/build_hub_device.py",
+    "ableton_agent/requirements-mcp.txt",
+    "ableton_agent/requirements-mcp.lock.txt",
+    ".python-version",
     "ableton_agent/sound_catalog/README.md",
     "docs/api_capability_matrix.md",
     "docs/group_track_workflow.md",
     "docs/hub_workflow.md",
     "docs/current_set_bootstrap.md",
     "scripts/read_current_set.ps1",
+    "scripts/python.ps1",
+    "scripts/agent_python.ps1",
+    "scripts/start_ableton_mcp.ps1",
+    "scripts/install_ableton_mcp.ps1",
+    "docs/mcp_server.md",
+    "docs/audio_similarity.md",
+    "docs/hub_status_panel.md",
+    "docs/saved_automation.md",
+    "docs/saved_als_reading.md",
+    "docs/module_health.md",
+    "docs/python_environment.md",
     "tests/test_ableton_bridge.py",
     "tests/test_initial_read.py",
     "tests/fixtures/.gitkeep",
@@ -60,17 +79,32 @@ GLOB_RULES = (
     "ableton_agent/python/ableton_bridge/*.py",
     "ableton_agent/schemas/*.md",
     "ableton_agent/styles/*.json",
+    "tests/test_*.py",
+    "tests/fixtures/*.cjs",
 )
 
 PUBLIC_OWNED_PATHS = {
+    Path("docs/python_environment.md"),
+    Path("docs/saved_automation.md"),
+    Path("AGENTS.md"),
     Path("ableton_agent/python/ableton_bridge/__init__.py"),
     Path("ableton_agent/python/ableton_bridge/cli.py"),
-    Path("ableton_agent/python/ableton_bridge/ping.py"),
-    Path("ableton_agent/python/ableton_bridge/tempo.py"),
     Path("docs/hub_workflow.md"),
 }
 
 PUBLIC_TEXT_REPLACEMENTS = {
+    Path("tests/test_mcp_server.py"): (
+        ('/ ".codex" / "config.toml"', '/ "examples" / "mcp.toml"'),
+    ),
+    Path("ableton_agent/python/ableton_bridge/tempo.py"): (
+        ("No tempo reply from Ableton Agent Hub or Tempo", "No tempo reply from Ableton Agent Hub"),
+        ("reload Ableton Agent Hub.amxd or load Ableton Agent Tempo.amxd in the current Set",
+         "check Ableton Agent Hub.amxd in the current Set; a timeout alone does not prove reload is needed"),
+    ),
+    Path("ableton_agent/build_hub_device.py"): (
+        ("from build_device import FALLBACK_TEMPLATE, _template_prefix",
+         "from amxd_container import FALLBACK_TEMPLATE, _template_prefix, extract_patch_json"),
+    ),
     Path("ableton_agent/python/ableton_bridge/client.py"): (
         (
             "load Ableton Agent Bridge.amxd in the current Set",
@@ -90,7 +124,6 @@ PUBLIC_TEXT_REPLACEMENTS = {
 }
 
 FORBIDDEN_DESTINATIONS = (
-    "AGENTS.md",
     "SESSION_HANDOFF.md",
     "projects",
     "experiments",
@@ -123,6 +156,8 @@ FORBIDDEN_TEXT_PATTERNS = (
         re.compile("ableton_agent_" + "workspace", re.IGNORECASE),
     ),
 )
+
+TEXT_SUFFIXES = {".js", ".json", ".md", ".ps1", ".py", ".txt"}
 
 PUBLIC_TEST_PATH = Path("tests/test_ableton_bridge.py")
 LEGACY_DEVICE_TEST_METHODS = {
@@ -162,9 +197,6 @@ def resolve_export_files(source: Path) -> list[Path]:
     relative_paths.update(
         Path("ableton_agent/max") / name for name in HUB_JAVASCRIPT
     )
-    relative_paths.update(
-        Path("ableton_agent/dist") / name for name in HUB_JAVASCRIPT
-    )
     for pattern in GLOB_RULES:
         relative_paths.update(path.relative_to(source) for path in source.glob(pattern))
     relative_paths.difference_update(PUBLIC_OWNED_PATHS)
@@ -186,7 +218,7 @@ def ensure_isolated(source: Path, destination: Path) -> None:
 def scan_text_files(paths: Iterable[Path], destination: Path) -> None:
     violations: list[str] = []
     for path in paths:
-        if path.suffix.lower() not in {".py", ".js", ".json", ".md", ".txt"}:
+        if path.suffix.lower() not in TEXT_SUFFIXES:
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
         for label, pattern in FORBIDDEN_TEXT_PATTERNS:
@@ -196,6 +228,18 @@ def scan_text_files(paths: Iterable[Path], destination: Path) -> None:
     if violations:
         formatted = "\n".join(f"- {violation}" for violation in violations)
         raise ValueError(f"Private path scan failed:\n{formatted}")
+
+
+def normalize_exported_text(path: Path) -> None:
+    """Match the public repository's canonical LF line-ending policy."""
+    if path.suffix.lower() not in TEXT_SUFFIXES:
+        return
+    original = path.read_bytes()
+    normalized = original.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    if normalized:
+        normalized = normalized.rstrip(b"\n") + b"\n"
+    if normalized != original:
+        path.write_bytes(normalized)
 
 
 def export_public_tests(source_path: Path, destination_path: Path) -> None:
@@ -281,7 +325,12 @@ def export(source: Path, destination: Path, *, dry_run: bool = False) -> dict:
             export_public_tests(source_path, destination_path)
         else:
             shutil.copy2(source_path, destination_path)
+        if relative.parts[0] == "tests" and relative.suffix == ".py":
+            content = destination_path.read_text(encoding="utf-8-sig")
+            content = content.replace("from build_device import extract_patch_json", "from amxd_container import extract_patch_json")
+            destination_path.write_text(content, encoding="utf-8", newline="\n")
         apply_public_text_replacements(relative, destination_path)
+        normalize_exported_text(destination_path)
         copied.append(destination_path)
 
     scan_text_files(copied, destination)
@@ -306,6 +355,7 @@ def export(source: Path, destination: Path, *, dry_run: bool = False) -> dict:
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=True, indent=2) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     return {"ok": True, "dry_run": False, **manifest}
 

@@ -1,6 +1,24 @@
 # v0.4.0-alpha Release Gate
 
-Status: preparation only; not exported, tagged, pushed or published.
+Status: source synchronization / PR candidate. Not a Live-accepted Release.
+
+## 2026-09-17 Verification
+
+- Exported source checkpoint: ad15203. Source-only allowlist; no local dist import.
+- 27 MCP tools and 33 portable installer assets (Hub, 31 JS, build manifest).
+- Development: 295 tests pass. Public candidate: 314 tests pass.
+- Wheel and sdist build succeeded. Clean wheel environment lists 27 tools and
+  installs/verifies 33 files in a temporary directory; repeat install changes zero.
+- Privacy tests cover text, source manifest, no private directories, and AMXD
+  JavaScript paths. No local Ableton installation, Set, playback or save changed.
+- Direct-intent rules and public AGENTS instructions now match development.
+- Stage-4 native dashboard visual acceptance, portable Hub reload and stage-5
+  listening acceptance remain pending. Pack AIF decoding is explicitly limited.
+- Push only the independent release branch and open a PR; do not tag/publish a
+  Release before remaining manual acceptance is reviewed.
+
+The checklist below is the historical preparation audit, superseded by the
+verification results above where explicitly covered.
 
 The development source integration is 423a076 (software cleanup 99575ef;
 representative Live acceptance 7d1d3ed). Export only allowlisted software files,

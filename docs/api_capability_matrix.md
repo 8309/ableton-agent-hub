@@ -1,8 +1,43 @@
 # Ableton Agent Capability Matrix
 
+Stage 4 Hub status panel: passive command/reply observation implemented on
+codex/hub-status-panel; 292 tests passed, dev-78199897fe40-local built and synced,
+32 manifest files verified. Dark jsui Overview/History/Diagnostics adds 32 bounded
+records, intent labels, last-probe evidence and paginated errors. Offline actual
+paint renders checked; native Max interaction and manual reload acceptance pending.
+No added route or LOM polling. Displayed outcome describes
+the module reply, not confirmed UDP delivery. See docs/hub_status_panel.md.
+
+UI-unit input (stage 3): existing scalar setters and mixed batch accept mutually
+exclusive `ui_value` text or internal `value`. Scoped EQ Eight, mixer volume/pan
+and unique device enum labels; no generic plugin conversion. 289 tests pass;
+Live volume/pan, EQ frequency/gain/Q and enum writes/readback/restoration passed
+on the test track. Confirmed build dev-37844bbbec71-local; no further reload for
+this Set. Scope is representative, not every device/value. See docs/ui_unit_input.md.
+
+First-stage module health: `ableton_status(probe_modules=True)` checks four
+handlers sequentially, read-only, with running helper build evidence and explicit
+unknown/unprobed state. Default ping is unchanged. 281 tests passed; Live acceptance
+pending manual Hub reload and MCP restart. See `module_health.md`.
+
 This document is the current capability map for the single supported Live entrypoint:
 
 `Ableton Agent Hub.amxd`
+
+The built Hub displays `Version: dev-<12 hex digits>` at the bottom. This
+deterministic builder/patch/JS source fingerprint identifies the built artifact,
+not a verified runtime dependency version or public release. UI confirmation
+after manual reload remains pending for the 2026-09-17 addition.
+
+DEPLOY-001: optional local build pins entry JS and includes to an explicit
+installation directory, with `-local` label and complete dependency cache.
+273 automated tests pass; Live module loading remains pending manual reload.
+Ping alone does not validate module availability. Local artifacts are not portable.
+
+2026-09-17 D: installation acceptance: track read completed in 47 ms; tokenless
+auto create returned applied:true/verified:true in 390 ms (Agent Write Test,
+track_id 3014). This validates the track entry/shared creative helper path and
+direct-create behavior only, not every module or write action.
 
 Each row is one practical capability. Each column answers one fixed question, so the table works as a real two-dimensional matrix rather than a loose command list.
 
@@ -16,6 +51,58 @@ Status legend:
 
 ## Capability Matrix
 
+Current saved-file layers are local tools, not Hub capabilities. `AUTO-001`
+(`ableton_read_saved_automation`) reads saved Arrangement nodes, file targets
+and boundary context. `ALS-002` (`ableton_read_saved_set`) composes the complete
+saved-set reader and can be added to the canonical first read. Constant-meter
+bar references are caller assumptions; neither tool reads unsaved data, maps
+file IDs to Live IDs, or writes curves.
+Automated tests/real-file acceptance recorded in `docs/saved_automation.md` and
+the finding. The previous Hub live-curve limitation remains unchanged.
+
+The old ALS snapshot experiment is now complete as a read-only saved-file layer:
+`ableton_read_saved_set` composes track/device, Mixer/routing, Scene, Audio Clip,
+MIDI, target-linked automation and GroovePool sections. It shares a bounded parsed
+document with the legacy ALS readers. `scripts/read_current_set.ps1 -AlsPath ...`
+adds this layer to the canonical Hub first read and reports a field-level
+saved-vs-Live comparison without using XML IDs for writes. This is not a Hub
+capability and needs an MCP restart, not a Hub reload.
+
+The current MCP server advertises **27 tools**. MCP-007/MCP-008 introduced the
+automation inventory and Arrangement adapters; their detailed deployment
+record is archived at
+`docs/history/validation/mcp_arrangement_automation_2026-09-09.md`.
+
+| Latest MCP capability | Read / inspect | Apply | Live validation |
+| --- | --- | --- | --- |
+| `ableton_diagnose_parameters` | bounded sequential field probes, health and continuation checks; existing progress/errors retained | n/a | one-item Reverb Predelay plus next identity page passed in 63 ms on 2026-09-17; not full-device/failure-path coverage |
+| `ableton_apply_batch` | existing mixer and parameter inspect, one MCP call | mixer group then parameter group; stops on error, not atomic; receipts retained | Test-track pan/EQ applies and exact restoration passed; ten rounds each: separate tool-wall median 127.5 ms vs batch 92 ms, service median both 62 ms. See docs/history/validation/2026-09-17-mixed-batch-benchmark.md; not a fixed LOM speedup. |
+| `ableton_scan_automation` | bounded resumable device-parameter states, nested Racks and Track/Return/Main; lightweight automation_state projection | n/a; does not disable automation or block writes | pending; excludes mixer states and curve points; partial scans explicit |
+| `ableton_edit_arrangement` | stable Clip target and existing destination checks | same-track audio move or MIDI note-data copy via existing token/Undo/readback helpers | pending for MCP facade; underlying audio move previously validated under CLIP-003 |
+| `ableton_read_saved_set` | explicit saved `.als` path; snapshot/project/MIDI/automation/Groove sections; local-only | n/a | automated and synthetic-file validated; real saved-file/UI comparison pending |
+
+### Historical Deployment Notes
+
+MCP-005 (2026-09-07) introduced nine typed creative tools over existing routes.
+The 21-tool count below is the count at that historical checkpoint. New private stable-ID/plan-token adapters
+are automated-tested and **partially Live-validated** on a disposable test track.
+MIDI creation/shift/fill, native insertion, EQ preset and Scene creation passed.
+The Track RGB correction requires another manual Hub reload; actual MCP host
+already exposes 21 tools. MCP-006 additionally extends `ableton_manage_tracks`
+with guarded deletion. Current Set Hub reload and MCP schema refresh are complete;
+device-containing audio-track deletion and the color correction passed Live tests.
+Older Hub instances require future manual reload. Full scope and limitations:
+`docs/mcp_server.md`, Creative Tools Update.
+
+| New MCP capability | Read / inspect | Apply | Live validation |
+| --- | --- | --- | --- |
+| MIDI creation, ID-preserving edits, new note-data variations | yes | implemented; token required | partial: Session/Arrangement create, shift and fill passed |
+| Local sound search with real path check | yes; local-only | n/a | no Hub required |
+| Specific Simpler/Drum Rack sample confirmation | yes | n/a; manual loading | partial: empty Simpler correctly detected; loaded path pending |
+| Whitelisted insertion and EQ preset | yes | implemented; token required | partial: Simpler/EQ Eight insert and lead preset passed |
+| Append/rename/color tracks; list/create/duplicate/rename/fire scenes | yes | implemented; token required | partial: MIDI track/Scene creation passed; corrected color behavior awaits reload |
+| Delete an ordinary non-Group track through `ableton_manage_tracks` (MCP-006) | bounded whole-track impact; direct devices/Clips/order | implemented; explicit intent + inspected token; rejects Hub host, last track and special tracks | yes: disposable audio track with Utility deleted, exact remaining IDs/order verified; Clip-containing impact read-only verified, actual Clip-containing deletion pending; legacy empty-track delete unchanged |
+
 | Capability | Hub Route | Python Client | Read | Dry-run | Commit | Live Validated | Creative Validated | Limitation / Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Hub connection check | `/ping` | `ableton_bridge.ping` | yes | n/a | n/a | yes | yes | Confirms Python can reach the Hub in Live. |
@@ -23,8 +110,8 @@ Status legend:
 | Transport | `/transport` | `ableton_bridge.transport` | yes | yes | yes | yes | yes | Play, stop, continue, jump, set position. Use readback because Live can briefly report stale state. |
 | Arrangement locators | `/locator` | `ableton_bridge.locator` | yes | yes | yes | yes | yes | List, create, delete, jump. Used for Intro, Drop 1, Hook 1, Breakdown, Outro. |
 | Set snapshot | `/snapshot` | `ableton_bridge.snapshot` | yes | n/a | n/a | yes | yes | Reads tracks and device chains. |
-| Parameter summary and discovery | `/parameter_summary` | `ableton_bridge.parameter_summary` | yes | yes | n/a | yes | yes | Preserves the whole-Set summary. Shared bounded reads are Live-validated for top-level Racks and nested Rack-chain `device_id` targets, including chain paths and `is_enabled`. Current reads preserve exact internal values, direct numeric GUI values from Live, and formatted UI text; dry-run targets retain the requested internal value and use `str_for_value` without writing. The old-Live fallback is automated-tested. The parameter adapter defaults omitted bounded `limit` values to `4` while preserving explicit `1..32` overrides. Stage 1 runtime diagnostics are Live-validated: correlated request IDs, structured Hub/LOM field errors, lightweight timings, and a bounded Python request journal correctly distinguish a successful all-field read from `target_not_found` at `device_resolving`, with final Hub health preserved. Separate progress packets and the automated diagnostic CLI remain designed but not Hub-implemented. Keep pages small and request UI display formatting only for selected parameters. |
-| Mixer control | `/set_mix` | `ableton_bridge.mixer_control` | yes | yes | yes | yes | yes | Ordinary-track behavior is preserved. Return/Main targets use `section + track_id`, require stable-id commit, and read values back. |
+| Parameter summary and discovery | `/parameter_summary` | `ableton_bridge.parameter_summary` | yes | yes | n/a | yes | yes | Preserves the whole-Set summary. Shared bounded reads are Live-validated for top-level Racks and nested Rack-chain `device_id` targets, including chain paths and `is_enabled`. Current reads preserve exact internal values, direct numeric GUI values from Live, and formatted UI text; dry-run targets retain the requested internal value and use `str_for_value` without writing. The old-Live fallback is automated-tested. The parameter adapter defaults omitted bounded `limit` values to `4` while preserving explicit `1..32` overrides. Stage 1 runtime diagnostics are Live-validated: correlated request IDs, structured Hub/LOM field errors, lightweight timings, and a bounded Python request journal correctly distinguish a successful all-field read from `target_not_found` at `device_resolving`, with final Hub health preserved. Opt-in progress packet delivery is Live-validated on successful reads (see MCP Reliability Update); delivery during a real synchronous hang remains unverified and the automated diagnostic CLI remains planned. Keep pages small and request UI display formatting only for selected parameters. |
+| Mixer control | `/set_mix` | `ableton_bridge.mixer_control` | yes | yes | yes | yes | yes | Low-risk calls default to one guarded apply request; explicit inspect and legacy `commit=False` remain available. Live validation confirmed exact before-state, optional `expected_before`, no-op apply, UI/internal readback, timings, and a persisted undo receipt while preserving the audible value. Return/Main no longer need a redundant preceding dry-run when resolved in the same request. |
 | Native instrument insertion | `/insert_device`, `/insert_devices` | `ableton_bridge.inserter` | partial | yes | yes | yes | yes | Whitelist-based native device insertion. |
 | Native effect insertion | `/insert_effect`, `/insert_effects` | `ableton_bridge.inserter` | partial | yes | yes | yes | yes | Return/Main single and batch targets retain stable IDs. A real Utility insertion on a disposable Return verified the new device ID and device-chain readback. |
 | Compatibility MIDI track creation | `/create_midi_track` | `ableton_bridge.inserter` | no | yes | yes | yes | partial | Older route kept for compatibility; prefer `/track_management`. |
@@ -41,15 +128,70 @@ Status legend:
 | Device chain templates and Rack discovery | `/device_chain` | `ableton_bridge.device_chain` | yes | yes | yes | yes | partial | Existing whole-track discovery and templates remain compatible. `root_device_id` subtree scans are Live-validated with relative/absolute depth, cumulative device limits, object-boundary budgets, truncation reasons, and selectable child Rack IDs. Rooted scans avoided a reproduced whole-track timeout on a complex Instrument/Audio Effect Rack track. Full Macro mapping graphs remain blocked by the public LOM. |
 | Macro / parameter snapshots | `/macro_parameters` | `ableton_bridge.macro_parameters` | yes | yes | yes | partial | partial | Scans/saves snapshots, applies snapshots, and morphs between two snapshot states. Large device scans should use limits. |
 | EQ tools | `/eq_tools` | `ableton_bridge.eq_tools` | yes | yes | yes | yes | partial | Lists safe EQ Eight presets, reads EQ Eight parameters, applies conservative preset moves, and sets one band parameter. Presets avoid filter-type switching and skip missing parameter names. |
-| Multi-parameter control | `/set_parameters` | `ableton_bridge.multi_parameter_control` | yes | yes | yes | yes | yes | Ordinary and Return/Main behavior is preserved. Rack parameters and enabled nested-device parameters are Live-validated through dry-run, stable `track_id + device_id + parameter_id` commit, and readback. Live-disabled, potentially Macro-controlled parameters are rejected before writing. |
+| Multi-parameter control | `/set_parameters` | `ableton_bridge.multi_parameter_control` | yes | yes | yes | yes | yes | Low-risk calls default to one guarded apply request; explicit inspect and legacy commit flags remain compatible. Live validation confirmed protected-parameter rejection before writing plus guarded no-op apply, exact UI/internal readback, timings, and a persisted restore receipt on a normal Simpler parameter. Nested devices still require stable `track_id + device_id + parameter_id`; disabled or Macro-controlled parameters are rejected before writing. |
 | Meter monitor | `/meter_monitor` | `ableton_bridge.meter_monitor` | yes | n/a | n/a | yes | partial | Default scans remain ordinary-track-only. Explicit Return/Main `section + track_id` one-shot reads are Live-validated; no continuous polling. |
 | Sample path preparation | `/load_sample` | `ableton_bridge.sample_loader` | partial | yes | blocked | partial | yes | Can validate and prepare sample paths, but Live does not expose supported arbitrary sample loading into Simpler/Drum Rack. |
 | Manual sample confirmation | `/sample_confirm` | `ableton_bridge.sample_confirm` | yes | n/a | n/a | yes | yes | Scans loaded samples, confirms a chosen Simpler or Drum Rack pad sample path, and compares it with the intended path. Drum Rack pad traversal is best-effort. |
 | Local sample index | local only | `ableton_bridge.sample_index` | yes | n/a | local file update | yes | yes | Verifies paths, rescans nearby folders when an indexed path is missing, updates the local index. |
 | Local sample picker | local only | `ableton_bridge.sample_picker` | yes | n/a | local file update | yes | yes | Ranks existing audio candidates by role/category/style/query, explains ranking reasons, verifies paths, and refreshes nearby folders for missing indexed files. |
-| Local sound catalog | local only | `ableton_bridge.sound_catalog` | yes | n/a | local file update | yes | pending | SQLite is the Agent-facing index. It provides stable Pack/resource IDs, FTS5, official XMP provenance, audio header fields, confidence-bearing filename BPM/key/root/loop hints, `.adg`/`.adv` device-chain/macro/FileRef parsing, resolved resource links, incremental fingerprint caching, and structured filters. JSON/Markdown remain compatibility outputs. Waveform-derived features, embeddings, feedback writes, and creative ranking validation remain pending. First full parsing is slow; missing filename evidence stays unknown. Discovery never implies automatic insertion. |
+| Local sound catalog | local only | `ableton_bridge.sound_catalog` | yes | n/a | local file update | yes | pending | SQLite supports metadata/tag/preset searches and bounded reference-audio ranking. First 30 seconds: peak, RMS, centroid, flatness and heuristic transients, with versioned cache and explainable distance. Standard WAV/AIFF/FLAC tested; sampled compressed Pack AIF files could not decode. Creative listening, embeddings and feedback remain pending. See `audio_similarity.md`. Discovery never implies automatic insertion. |
 | Generic current-Set initial read | local orchestration | `scripts/read_current_set.ps1` / `ableton_bridge.initial_read` | yes | n/a | n/a | yes | yes | The repository launcher removes per-session Python/path discovery and defaults to one progressive quick-then-deep process. It atomically exposes a quick checkpoint, then reuses the same metadata for bounded note/mixer reads. Dense pages retry at 4 beats and reuse that width on the same stable track ID. Two Sets are Live-validated: 120 clips at 0.328 s quick / 1.703 s full, and 25 clips at 0.094 s quick / 6.047 s full for 1,479 notes. No Hub reload is required. |
+| Saved ALS combined read | local-only saved-file evidence | `ableton_bridge.als_bundle` / `ableton_read_saved_set` | yes | n/a | n/a | n/a | partial | Reads the last saved Gzip/XML document with shared caching; optional `-AlsPath` integration keeps Hub current state and saved state separate and compares tempo/locators/track structure. No ALS writes, no runtime-ID substitution, and unsaved edits remain outside the file layer. |
+| Codex MCP Batch 1 | local STDIO orchestration | `ableton_bridge.mcp_server` / `.codex/config.toml` | yes | inherited | scalar only | partial | yes | Six stable tools cover Hub status, current-Set read, stable target lookup, bounded parameter pages, guarded mixer writes, and guarded parameter writes. One persistent process removes repeated Python startup and uses a global lock to serialize every UDP `7401` operation. Existing Hub routes and risk/readback contracts are unchanged. Official-SDK STDIO launch and tool discovery pass. With the project server marked `required = true`, a fresh Codex host completed a strictly sequential read-only workflow through the actual MCP tools: Hub status, stable track/device lookup, and a one-item parameter read, all with zero queue wait. It resolved track ID `2`, device ID `26`, and parameter ID `365` (`Device On` = internal `1`, display `On`). Hub reload is not required. |
 | Project recommender | local only | `ableton_bridge.recommender` | yes | n/a | n/a | partial | partial | Read-only project/style helper. |
+
+## MCP Common Tools Update (2026-09-05)
+
+MCP-004 extends the six-tool facade to twelve tools without a Hub change.
+`ableton_transport`, `ableton_tempo`, `ableton_list_locators`,
+`ableton_scan_clips`, `ableton_read_clip_notes`, and `ableton_read_meters` reuse
+existing production routes. Clip reads are single pages with explicit cursor/token;
+note windows are measured in clip-local beats. Meters require one stable track ID.
+Transport auto applies only requested ephemeral actions; tempo defaults to inspect
+and explicit apply only changes live_set.tempo, not Song Tempo automation.
+
+196 automated tests pass. A fresh SDK STDIO process discovered all twelve tools
+and passed each read path plus tempo inspect and final status against Live on
+2026-09-05. No Live writes were made. New MCP write paths and actual restarted
+Codex-host acceptance remain pending. No Hub rebuild/reload is needed; restart
+existing Codex/MCP processes to discover these tools. Full defaults, limits and
+validation evidence are in `docs/mcp_server.md`.
+Post-restart host status passed, but its old six-name enabled_tools allowlist
+filtered out the additions. The project allowlist is now corrected and covered
+by the SDK inventory test. The latest user restart exposes all twelve tools in
+the actual host. Its first status timed out after 3031 ms, but after user-confirmed
+Hub recovery actual status, tempo (80 BPM) and locator listing (2) all pass.
+Discovery and narrow actual-host read acceptance pass. New MCP write-path Live
+validation remains pending; no further Codex restart is required for this host.
+
+## MCP Reliability Update (2026-09-05)
+
+New batch (`MCP-003`, `PARAM-009` Stage 2): 186 automated tests pass; **bounded
+discovery and successful-read progress delivery are Live-validated** following
+user recovery/reload. Actual Codex MCP exposes the new arguments. Initial/final
+status pass; all validation calls were read-only. The active instance needs no
+further Hub reload or MCP restart; older instances still require user-performed
+reload/restart when selected. The prior timeout cause remains unknown (see
+PARAM-009); this round does not establish delivery during a synchronous hang.
+
+| New Behavior | Implementation | Live Validation | Boundary |
+| --- | --- | --- | --- |
+| Return/Main device discovery | Section-aware `/device_chain` scans | yes (actual MCP) | Stable ID must belong to the selected section; Return Reverb and Main Limiter resolved. |
+| Direct device pages | `scan_children`, cursor/token, child Rack IDs | yes | Return/Main siblings and targeted Rack 946 children continuation passed; not an exhaustive deep-tree test. Recursive mode remains configurable. |
+| MCP search continuation | Source cursor/token and match_offset | yes (small pages) | Default page remains 4; cursor 0/4/8 and stable token passed. Beyond 128 positions and match overflow are automated-tested; warnings stop continuation. |
+| Track directory cache | Five-second process-local cache with live revision probe | yes (hit/refresh) | Miss/hit/refresh-miss verified; TTL/Set-change invalidation automated-tested. No value cache or write authority; name/hierarchy edits may need refresh. |
+| Parameter progress | Separate reply address, none/page/parameter/field | yes (successful read) | Callback received 27 correlated packets through reply_serialized; Device On = 1 / On, 16 ms client time. Normal reads emit none. Best-effort evidence, not cancellation or proven delivery during a hang. |
+
+The automated diagnostic sequence CLI remains planned. See `docs/mcp_server.md`
+for continuation and invalidation rules; no new public request route was added.
+
+`MCP-002`: all Python bridge reply sockets now acquire a cooperative cross-process
+port lock. Lookup results preserve source completeness/continuation metadata, and
+structured errors retain their original layer and correlation details. Full tests:
+177 passed, including real spawned-process locking tests. A fresh SDK MCP process
+passed sequential status, invalid-target error propagation, and final status in
+Live without changing the Set. Restart existing MCP processes to load the update;
+`reload_required:false` for Hub. Old/external clients are outside lock coverage.
 
 ## Confirmed Live API Limits
 
@@ -130,3 +272,10 @@ Status legend:
 - Step 9 follow-up: `/scene` now supports `duplicate` and `capture_midi`.
 - Step 8 Live validation: ordinary-track `scan_routing --no-returns` and `scan_routing --include-returns` both work. Return tracks are listed with `routing_limited:true`. A no-op `set_output_routing --track-index 1 --output-routing-type Main --commit` succeeded.
 - Step 9 Live validation: `duplicate` dry-run planned copying `Drop 1` to scene index `2`; `capture_midi` dry-run reported Live's capture-state dependency without changing the Set.
+# Execution Policy Update (2026-09-17)
+
+ADR-0008: direct user-requested writes replace risk-tier gating. Creative MCP
+auto writes apply without a prior inspect/token; reads remain read-only. Optional
+inspect/tokens, target checks and readback remain. Automated tests pass; updated
+Hub reload and MCP restart required, Live acceptance pending. Older mandatory
+inspection descriptions below are superseded for these creative MCP actions.

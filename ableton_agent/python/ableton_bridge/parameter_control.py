@@ -8,6 +8,7 @@ import uuid
 from typing import Any
 
 from .osc import OscDecodeError, decode_message, encode_message
+from .reply_port_lock import reply_port_lock
 from .value_display import ValueDisplayError, format_value_display, normalize_value_display_mode
 
 
@@ -35,7 +36,7 @@ def set_parameter(
     mode = "commit" if commit else "dry_run"
     packet = encode_message("/set_parameter", [request_id, str(parameter), float(value), mode])
 
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
+    with reply_port_lock(reply_port, timeout=timeout), socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
         reply_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         reply_socket.bind((host, reply_port))
         reply_socket.settimeout(min(timeout, 0.2))

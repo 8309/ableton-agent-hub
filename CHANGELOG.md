@@ -5,6 +5,28 @@ follows Keep a Changelog, and version numbers follow semantic versioning.
 
 ## [Unreleased]
 
+## [0.4.0-alpha] - 2026-09-17
+
+### Added
+
+- 27 typed MCP tools, serialized transport, module health and runtime diagnostics.
+- MIDI/Arrangement editing, automation-state inventory and local saved-ALS readers.
+- Mixed scalar batches, explicit UI-unit setters, and a compact Hub status dashboard.
+- Bounded local waveform analysis, versioned cache and reference-audio ranking.
+- Portable build manifest, 33 installer assets and a public MCP configuration example.
+
+### Changed
+
+- Explicit user-requested MCP writes apply directly; inspect remains optional.
+- Source-only export followed by portable rebuild prevents local dependency paths
+  entering the distributed Hub. Public agent instructions match current behavior.
+
+### Validation Limits
+
+- Native Live visual acceptance of the dashboard and portable Live reload are pending.
+- Compressed Pack AIF decoding and creative listening acceptance remain pending.
+- No audio generation model, automatic sample loading or embeddings are included.
+
 ## [0.3.0-alpha] - 2026-08-21
 
 ### Added

@@ -1,4 +1,5 @@
 autowatch = 1;
+include("ableton_agent_creative_control.js");
 inlets = 1;
 outlets = 1;
 
@@ -6,6 +7,30 @@ include("ableton_agent_read_core.js");
 
 var MAX_DETAIL_NOTES = 4096;
 var MAX_CLIP_METADATA = 512;
+
+function prepareCreativeClipNoteTools(p) {
+    if (["shift_notes", "quantize_notes", "scale_velocity"].indexOf(p.action)<0) { throw new Error("Unsupported safe note action"); }
+    var t = AgentCreative.track(p), c = AgentCreative.clip(t, p.clip_id, false);
+    var before = AgentCreative.notes(c), after = JSON.parse(JSON.stringify(before)), changes = [];
+    var length = Number(AgentCreative.value(c.get("length")));
+    var start = p.start === undefined ? 0 : p.start, end = p.end === undefined ? length : p.end;
+    if (!(end>start)) { throw new Error("Invalid note window"); }
+    for (var i=0; i<after.length; i+=1) {
+        var n=after[i];
+        if (n.start_time<start || n.start_time>=end) { continue; }
+        if (p.action === "shift_notes") { n.start_time += p.beats; }
+        if (p.action === "quantize_notes") { n.start_time = Math.round(n.start_time/p.grid)*p.grid; }
+        if (p.action === "scale_velocity") { n.velocity = Math.max(1,Math.min(127,n.velocity*p.factor)); }
+        if (!isFinite(n.start_time) || n.start_time<0 || n.start_time>=length || !isFinite(n.velocity)) { throw new Error("Edited note outside supported range"); }
+        if (JSON.stringify(n)!==JSON.stringify(before[i])) { changes.push(n); }
+    }
+    return {state:[before,length], plan:{track_id:t.id,clip_id:p.clip_id,changed_count:changes.length,
+        range:[start,end],before_examples:before.slice(0,4),after_examples:after.slice(0,4)}, apply:function() {
+        if (changes.length) { AgentCreative.writeNotes(c,changes,"apply_note_modifications"); }
+        AgentCreative.checkNotes(after,AgentCreative.notes(c),true);
+        return {clip_id:p.clip_id,changed_count:changes.length,verified:true,original_note_ids_preserved:true};
+    }};
+}
 
 
 function list() {
@@ -752,6 +777,10 @@ function handleClipNoteTools(requestId, payloadText, mode) {
     var dryRun = String(mode || "dry_run") !== "commit";
     try {
         var payload = JSON.parse(String(payloadText || "{}"));
+        if (payload.mcp_safe !== undefined) {
+            AgentCreative.handle("clip_note_tools", requestId, payload, mode, prepareCreativeClipNoteTools, agentCreativeEmit);
+            return;
+        }
         var action = String(payload.action || "read_notes");
         var allowed = ["scan_clips", "scan_clips_metadata", "read_notes", "read_notes_by_clip_id", "shift_notes", "quantize_notes", "delete_notes_in_range", "scale_velocity"];
         if (allowed.indexOf(action) < 0) {

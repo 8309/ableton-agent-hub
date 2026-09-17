@@ -242,25 +242,18 @@ def render_summary(catalog: dict[str, Any], database: dict[str, Any] | None = No
         lines.append("| None discovered | - | - |")
     lines.extend([
         "", "## Update Workflow", "",
-        "From the repository root:", "",
+        "From the repository root, use the workspace Python launcher:", "",
         "```powershell",
-        "$env:PYTHONPATH='ableton_agent/python'",
-        "python -m ableton_bridge.sound_catalog scan",
-        "```", "",
-        "If the system Python is unavailable in this workspace, use the verified",
-        "shared interpreter:", "",
-        "```powershell",
-        "$env:PYTHONPATH='ableton_agent/python'",
-        "& '.\\experiments\\text2midi\\.venv\\Scripts\\python.exe' -m ableton_bridge.sound_catalog scan",
+        "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/python.ps1 -m ableton_bridge.sound_catalog scan",
         "```", "",
         "Then verify the Pack count against Live's `Packs` browser section and",
         "spot-check any newly installed Pack before creative use. Search without",
         "rescanning with:", "",
         "```powershell",
-        "python -m ableton_bridge.sound_catalog search --pack \"Pack Name\" --kind ableton_preset",
-        "python -m ableton_bridge.sound_catalog search --role drums --kind audio_sample",
-        "python -m ableton_bridge.sound_catalog search --bpm-min 124 --bpm-max 130 --loop",
-        "python -m ableton_bridge.sound_catalog search --device Simpler --kind ableton_preset",
+        "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/python.ps1 -m ableton_bridge.sound_catalog search --pack \"Pack Name\" --kind ableton_preset",
+        "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/python.ps1 -m ableton_bridge.sound_catalog search --role drums --kind audio_sample",
+        "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/python.ps1 -m ableton_bridge.sound_catalog search --bpm-min 124 --bpm-max 130 --loop",
+        "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/python.ps1 -m ableton_bridge.sound_catalog search --device Simpler --kind ableton_preset",
         "```", "",
         "## Capability Boundary", "",
         "- Discovery does not grant automatic insertion.",
@@ -420,8 +413,24 @@ def main() -> int:
     parser.set_defaults(is_loop=None)
     parser.add_argument("--device")
     parser.add_argument("--rack-type")
-    parser.add_argument("--limit", type=int, default=20)
+    parser.add_argument("--reference-audio")
+    parser.add_argument("--candidate-limit", type=int, default=24)
+    parser.add_argument("--limit", type=int)
     args = parser.parse_args()
+    args.limit = args.limit if args.limit is not None else (5 if args.reference_audio else 20)
+    if args.reference_audio:
+        if args.action != "search":
+            parser.error("--reference-audio requires search")
+        from .audio_similarity import rank_sounds
+        result = rank_sounds(args.database, args.reference_audio, limit=args.limit,
+            candidate_limit=args.candidate_limit, query=args.query, role=args.role,
+            kind=args.kind, pack=args.pack, official_tag=args.official_tag,
+            bpm_min=args.bpm_min, bpm_max=args.bpm_max, key=args.key,
+            root_note=args.root_note, duration_min=args.duration_min,
+            duration_max=args.duration_max, is_loop=args.is_loop,
+            device=args.device, rack_type=args.rack_type)
+        print(json.dumps(result, indent=2, ensure_ascii=False), flush=True)
+        return 0 if result["ok"] else 1
     if args.action == "scan":
         from .sound_catalog_db import build_catalog_database
 

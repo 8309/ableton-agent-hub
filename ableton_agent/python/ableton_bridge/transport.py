@@ -8,6 +8,7 @@ import uuid
 from typing import Any
 
 from .osc import OscDecodeError, decode_message, encode_message
+from .reply_port_lock import reply_port_lock
 
 
 class TransportError(RuntimeError):
@@ -32,17 +33,25 @@ def transport(
     if beat is not None:
         payload["beat"] = float(beat)
     result = _request_transport(payload, commit=commit, host=host, command_port=command_port, reply_port=reply_port, timeout=timeout)
-    if commit and action != "status":
+    if result.get("ok") and commit and action != "status":
         time.sleep(0.2)
-        status = _request_transport(
-            {"action": "status"},
-            commit=False,
-            host=host,
-            command_port=command_port,
-            reply_port=reply_port,
-            timeout=timeout,
-        )
+        try:
+            status = _request_transport(
+                {"action": "status"},
+                commit=False,
+                host=host,
+                command_port=command_port,
+                reply_port=reply_port,
+                timeout=timeout,
+            )
+        except (TransportError, OSError, ValueError) as error:
+            status = {"ok": False, "error": str(error), "error_type": type(error).__name__}
         result["confirmed_after"] = status.get("before")
+        result["readback"] = status
+        if not status.get("ok"):
+            result["ok"] = False
+            result["error_code"] = "transport_readback_failed"
+            result["error"] = "Transport was applied but its follow-up status failed"
     return result
 
 
@@ -59,7 +68,7 @@ def _request_transport(
     mode = "commit" if commit else "dry_run"
     packet = encode_message("/transport", [request_id, json.dumps(payload, ensure_ascii=False), mode])
 
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
+    with reply_port_lock(reply_port, timeout=timeout), socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
         reply_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         reply_socket.bind((host, reply_port))
         reply_socket.settimeout(min(timeout, 0.2))

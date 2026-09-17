@@ -1,8 +1,11 @@
 # Coding Agent Setup
 
-Ableton Agent Hub does not overwrite a repository's `AGENTS.md` or equivalent
-instructions file. Coding-agent users should append a project-level section so
-new sessions consistently use the supported first-read path.
+The Ableton Agent Hub source repository includes a root `AGENTS.md`, which
+coding agents load automatically when working in that checkout. Users who
+install the package into a different project should append the section below to
+that project's `AGENTS.md` or equivalent instructions file so new sessions use
+the supported first-read path. The installer never overwrites an existing
+instructions file.
 
 ## Recommended Instructions
 
@@ -21,8 +24,15 @@ new sessions consistently use the supported first-read path.
 - Never send concurrent Hub requests. UDP 7401 is one sequential reply channel.
 - A preflight failure must stop the scan and be reported to the user. Do not use
   an older Set cache as current state.
-- All write-capable commands remain dry-run unless the user explicitly reviews
-  and requests commit. Read back state after every commit where supported.
+- Apply explicit user-requested writes directly with stable IDs and readback.
+  Do not introduce risk tiers or mandatory inspect/dry-run. Legacy CLI uses
+  `--commit`; inspection is read-only, not a simulation.
+- After a write timeout, verify affected state before any retry.
+- Parameter reads default to four-item pages; use bounded continuation.
+- Saved ALS evidence is not unsaved Live state. Never use saved XML IDs for writes.
+- Reference-audio search is local and decoder-limited; load samples manually.
+- After software updates, restart MCP. Reload Hub manually only when its files
+  changed, after switching to the intended Set. Never reload a background Set.
 ```
 
 The PowerShell launcher checks both the Ableton process and Hub response. The

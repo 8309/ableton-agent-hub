@@ -8,6 +8,7 @@ import uuid
 from typing import Any
 
 from .osc import OscDecodeError, decode_message, encode_message
+from .reply_port_lock import reply_port_lock
 
 
 class TempoError(RuntimeError):
@@ -43,7 +44,7 @@ def tempo(
     mode = "commit" if commit else "dry_run"
     packet = encode_message("/tempo", [request_id, json.dumps(payload, ensure_ascii=False), mode])
 
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
+    with reply_port_lock(reply_port, timeout=timeout), socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reply_socket:
         reply_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         reply_socket.bind((host, reply_port))
         reply_socket.settimeout(min(timeout, 0.2))
@@ -57,7 +58,7 @@ def tempo(
             if remaining <= 0:
                 raise TempoTimeoutError(
                     f"No tempo reply from Ableton Agent Hub on UDP {reply_port}; "
-                    "load or reload Ableton Agent Hub.amxd in the current Set"
+                    "check Ableton Agent Hub.amxd in the current Set; a timeout alone does not prove reload is needed"
                 )
             reply_socket.settimeout(min(remaining, 0.2))
             try:
