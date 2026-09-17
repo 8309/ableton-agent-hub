@@ -1,6 +1,32 @@
 # v0.4.0-alpha Release Gate
 
-Status: source synchronization / PR candidate. Not a Live-accepted Release.
+Status: alpha publication authorized on 2026-09-17 with the known limits below.
+This is not a claim of complete portable Live or creative listening acceptance.
+
+## Release Highlights
+
+- 27 typed MCP tools for inspection, MIDI/Arrangement editing, mixing and devices.
+- Serialized transport, correlated diagnostics, mixed batches and UI-unit input.
+- Saved-ALS read-only evidence and a passive graphical Hub status dashboard.
+- Local sound catalog and bounded, cached reference-audio similarity ranking.
+
+## Known Limits And Upgrade Notes
+
+- Standard decodable WAV/AIFF/FLAC is supported for waveform analysis. Eight
+  sampled Pack AIF files across eight Packs use AIFC `able` encoding and all
+  failed decoding. Metadata search remains available; no waveform similarity
+  score is fabricated for unsupported audio. An unsupported reference fails
+  explicitly. Installing FFmpeg is not an established fix.
+- ALC metadata/sample-reference parsing is a development prototype, not a
+  shipped MCP feature. Five tested ALCs were MIDI clips; audio ALC support has
+  not been accepted. ALC is not directly treated as an audio waveform.
+- Native dashboard visual validation, portable Hub reload validation and
+  human listening evaluation remain pending. This release is a prerelease.
+- Update the Python/MCP installation and restart its host. Install the complete
+  Hub dependency bundle, then manually reload the Hub in the intended Set.
+  Recheck project AGENTS.md against docs/agent_setup.md and the supplied AGENTS.md;
+  explicit requested writes no longer require a separate mandatory dry-run.
+- No automatic sample loading, audio generation model or embeddings are included.
 
 ## 2026-09-17 Verification
 
@@ -14,8 +40,8 @@ Status: source synchronization / PR candidate. Not a Live-accepted Release.
 - Direct-intent rules and public AGENTS instructions now match development.
 - Stage-4 native dashboard visual acceptance, portable Hub reload and stage-5
   listening acceptance remain pending. Pack AIF decoding is explicitly limited.
-- Push only the independent release branch and open a PR; do not tag/publish a
-  Release before remaining manual acceptance is reviewed.
+- Windows push and pull-request CI passed. The remaining manual acceptance was
+  reviewed and deferred explicitly for this alpha publication.
 
 The checklist below is the historical preparation audit, superseded by the
 verification results above where explicitly covered.

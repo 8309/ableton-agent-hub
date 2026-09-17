@@ -24,7 +24,10 @@ follows Keep a Changelog, and version numbers follow semantic versioning.
 ### Validation Limits
 
 - Native Live visual acceptance of the dashboard and portable Live reload are pending.
-- Compressed Pack AIF decoding and creative listening acceptance remain pending.
+- Pack AIFC `able` audio is unsupported by the current decoder; metadata search
+  remains available, but waveform ranking cannot use these references.
+- ALC parsing remains a development prototype, not a shipped MCP feature.
+- Creative listening acceptance remains pending.
 - No audio generation model, automatic sample loading or embeddings are included.
 
 ## [0.3.0-alpha] - 2026-08-21
